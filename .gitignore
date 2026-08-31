@@ -1,0 +1,14 @@
+node_modules/
+node_modules_win/
+dist/
+build/
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+scratch/
+extract-wincodesign.js
+inject-autoupdater.js
+generate-icons.js
+generate-icons.ps1

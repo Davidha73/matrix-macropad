@@ -1,0 +1,28 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  sendAction: (action) => ipcRenderer.send('trigger-macro', action),
+  onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
+  onConfigUpdated: (callback) => ipcRenderer.on('config-updated', (event, cfg) => callback(cfg)),
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  saveConfig: (config) => ipcRenderer.invoke('save-config', config),
+  selectImage: () => ipcRenderer.invoke('select-image'),
+  listProfiles: () => ipcRenderer.invoke('list-profiles'),
+  saveProfile: (name, config) => ipcRenderer.invoke('save-profile', name, config),
+  loadProfile: (name) => ipcRenderer.invoke('load-profile', name),
+  exportProfile: (config) => ipcRenderer.invoke('export-profile', config),
+  importProfile: () => ipcRenderer.invoke('import-profile'),
+  exportTheme: (themeData) => ipcRenderer.invoke('export-theme-file', themeData),
+  importTheme: () => ipcRenderer.invoke('import-theme-file'),
+  captureFrame: () => ipcRenderer.invoke('capture-macropad-frame'),
+  injectTouch: (touchData) => ipcRenderer.send('inject-hardware-touch', touchData),
+  onHardwareStatus: (callback) => ipcRenderer.on('hardware-status', (event, s) => callback(s)),
+  getHardwareStatus: () => ipcRenderer.invoke('get-hardware-status'),
+  syncHardware: (config) => ipcRenderer.invoke('sync-hardware', config),
+  minimizeWindow: () => ipcRenderer.send('window-minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-maximize'),
+  closeWindow: () => ipcRenderer.send('window-close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  platform: process.platform
+});
+

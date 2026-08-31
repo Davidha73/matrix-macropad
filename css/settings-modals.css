@@ -1,0 +1,346 @@
+/* ========================================================
+   SETTINGS-MODALS.CSS - Shortcut, Icon & Confirmation Modals
+   ======================================================== */
+
+/* --- 10. MODALS & POPUPS --- */
+.modal-overlay,
+.prompt-modal-overlay {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--overlay-modal);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(10px);
+}
+.modal-overlay.visible { display: flex; }
+
+.prompt-modal-box {
+    background: var(--bg-pane);
+    border: 1px solid var(--border-control-hover);
+    border-radius: 12px;
+    padding: 20px;
+    width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: var(--shadow-modal);
+}
+.prompt-modal-box h3 { margin: 0; color: var(--text-heading); font-size: 15px; font-weight: 600; }
+.prompt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Right Pane Overlay (e.g. Shortcut Picker) */
+.modal-overlay.right-pane-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(12, 13, 15, 0.94);
+    backdrop-filter: blur(14px);
+    z-index: 500;
+    border-radius: 12px;
+    display: none;
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+.modal-overlay.right-pane-overlay.visible {
+    display: flex;
+}
+
+.right-pane-overlay .shortcut-picker-card {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 12px;
+    padding: 16px 18px;
+    gap: 12px;
+    border: 1px solid var(--border-control-hover);
+    box-shadow: none;
+}
+
+.shortcut-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.shortcut-picker-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-heading);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.shortcut-picker-title .material-symbols-outlined { 
+    font-size: 20px; 
+    color: var(--accent-primary); 
+}
+
+.shortcut-picker-categories {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-bottom: 2px;
+    margin: 8px 0 8px 0;
+}
+
+.right-pane-overlay .shortcut-picker-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    overflow-y: auto;
+    max-height: none;
+    flex: 1;
+    padding-right: 4px;
+}
+
+.shortcut-card-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-control);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    width: 100%;
+}
+
+.shortcut-card-btn:hover {
+    background: var(--bg-control-hover);
+    border-color: var(--border-control-hover);
+}
+
+.shortcut-card-btn.selected {
+    background: rgba(148, 114, 247, 0.15);
+    border-color: var(--accent-primary);
+}
+
+.shortcut-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.shortcut-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.shortcut-card-group {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.shortcut-card-badge {
+    background: #0f1014;
+    border: 1px solid var(--border-control);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    white-space: nowrap;
+}
+
+.shortcut-custom-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.custom-recorder-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.custom-recorder-label .material-symbols-outlined {
+    font-size: 14px;
+    color: var(--accent-danger);
+}
+
+#shortcut-modal-record-input {
+    flex: 1;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.icon-picker-card {
+    background: var(--bg-pane);
+    border: 1px solid var(--border-control-hover);
+    border-radius: 14px;
+    width: 860px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 14px;
+    box-shadow: var(--shadow-modal);
+    overflow-x: hidden;
+}
+
+.icon-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.icon-picker-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-heading);
+    font-size: 16px;
+    font-weight: 600;
+}
+.icon-picker-title .material-symbols-outlined { font-size: 20px; color: var(--accent-primary); }
+
+.icon-picker-categories {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-bottom: 2px;
+}
+
+.icon-cat-tab {
+    background: var(--bg-control);
+    border: 1px solid var(--border-control);
+    border-radius: 14px;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.icon-cat-tab.active, .icon-cat-tab:hover { background: var(--accent-primary); border-color: var(--accent-primary); color: #ffffff; font-weight: 600; }
+
+.icon-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    overflow-y: auto;
+    max-height: 400px;
+    padding-right: 4px;
+}
+
+.icon-card-btn {
+    background: var(--bg-control);
+    border: 1px solid var(--border-subtle);
+    border-radius: 7px;
+    color: var(--text-primary);
+    padding: 12px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.icon-card-btn:hover { background: var(--bg-control-hover); border-color: var(--border-control-hover); }
+.icon-card-btn .material-symbols-outlined { font-size: 26px; color: var(--accent-primary); }
+.icon-card-label {
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+.icon-picker-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    padding: 30px;
+    font-size: 13px;
+}
+
+/* Custom Confirmation Popup Dialog */
+.confirm-modal-box {
+    background: var(--bg-pane);
+    border: 1px solid var(--border-control-hover);
+    border-radius: 12px;
+    padding: 22px 20px;
+    width: 380px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: var(--shadow-modal);
+}
+
+.confirm-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.confirm-modal-icon {
+    font-size: 24px;
+    color: var(--accent-danger);
+}
+
+.confirm-modal-header h3 {
+    margin: 0;
+    color: var(--text-heading);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.confirm-modal-message {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.confirm-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.btn.btn-danger {
+    background: var(--accent-danger);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.btn.btn-danger:hover {
+    background: var(--accent-danger-dark);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(244, 63, 94, 0.35);
+}

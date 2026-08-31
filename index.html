@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Macro Pad Matrix</title>
+    <link rel="icon" type="image/x-icon" href="assets/matrix-icon-256.ico">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24..48,400..700,0..1,-50..200" />
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="screensaver.css">
+</head>
+<body>
+
+    <!-- Top Navigation Container -->
+    <div class="nav-bar">
+        <button type="button" class="nav-arrow-btn" id="nav-prev" onclick="prevPage()"><span class="material-symbols-outlined">chevron_left</span></button>
+        <div class="nav-track-viewport">
+            <div class="nav-track" id="nav-track"></div>
+        </div>
+        <button type="button" class="nav-arrow-btn" id="nav-next" onclick="nextPage()"><span class="material-symbols-outlined">chevron_right</span></button>
+    </div>
+
+    <!-- PAGE 1: EDITING TOOLS -->
+    <div class="page-container active" id="page-1">
+        <button class="macro-btn c-edit" onclick="tapMacro('p1-b1')">Select All</button>
+        <button class="macro-btn c-edit" onclick="tapMacro('p1-b2')">Copy</button>
+        <button class="macro-btn c-edit" onclick="tapMacro('p1-b3')">Paste</button>
+        <button class="macro-btn c-gray" onclick="tapMacro('p1-b4')">Undo</button>
+        <button class="macro-btn c-gray" onclick="tapMacro('p1-b5')">Redo</button>
+        <button class="macro-btn c-danger" onclick="tapMacro('p1-b6')">Delete</button>
+    </div>
+
+    <!-- PAGE 2: SYSTEM CONTROLS -->
+    <div class="page-container" id="page-2">
+        <button class="macro-btn c-system" onclick="tapMacro('p2-b1')">⏮ Prev</button>
+        <button class="macro-btn c-system" onclick="tapMacro('p2-b2')">⏯ Play/Pause</button>
+        <button class="macro-btn c-system" onclick="tapMacro('p2-b3')">⏭ Next</button>
+        <button class="macro-btn c-util" onclick="tapMacro('p2-b4')">🔉 Vol Down</button>
+        <button class="macro-btn c-util" onclick="tapMacro('p2-b5')">🔇 Mute Audio</button>
+        <button class="macro-btn c-util" onclick="tapMacro('p2-b6')">🔊 Vol Up</button>
+    </div>
+
+    <!-- PAGE 3: CUSTOM / PLACEHOLDER MACROS -->
+    <div class="page-container" id="page-3">
+        <button class="macro-btn c-nav" onclick="tapMacro('p3-b1')">Custom 1</button>
+        <button class="macro-btn c-nav" onclick="tapMacro('p3-b2')">Custom 2</button>
+        <button class="macro-btn c-nav" onclick="tapMacro('p3-b3')"><img src="google-logo.jpg" alt="Google" class="macro-icon"></button>
+        <button class="macro-btn c-gray" onclick="tapMacro('p3-b4')">Custom 4</button>
+        <button class="macro-btn c-gray" onclick="tapMacro('p3-b5')">Custom 5</button>
+        <button class="macro-btn c-gray" onclick="tapMacro('p3-b6')">Custom 6</button>
+    </div>
+
+    <!-- QUICK TOUCH-OPTIMIZED TIMER SETTINGS MODAL (5" SCREEN) -->
+    <div id="timer-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-body">
+                <div class="modal-preset-grid">
+                    <button type="button" class="preset-btn" data-mode="stopwatch" onclick="selectModalPreset('stopwatch')"><span class="material-symbols-outlined">timer</span> Stopwatch</button>
+                    <button type="button" class="preset-btn" data-mode="60" onclick="selectModalPreset('60')">1 Min</button>
+                    <button type="button" class="preset-btn" data-mode="180" onclick="selectModalPreset('180')">3 Min</button>
+                    <button type="button" class="preset-btn" data-mode="300" onclick="selectModalPreset('300')">5 Min</button>
+                    <button type="button" class="preset-btn" data-mode="600" onclick="selectModalPreset('600')">10 Min</button>
+                    <button type="button" class="preset-btn" data-mode="1800" onclick="selectModalPreset('1800')">30 Min</button>
+                    <button type="button" class="preset-btn" data-mode="3600" onclick="selectModalPreset('3600')">1 Hr</button>
+                    <button type="button" class="preset-btn" data-mode="10800" onclick="selectModalPreset('10800')">3 Hr</button>
+                    <button type="button" class="preset-btn" data-mode="custom" onclick="selectModalPreset('custom')">Custom</button>
+                </div>
+
+                <div id="modal-custom-container" class="modal-custom-stepper hidden">
+                    <button type="button" class="preset-btn custom-back-btn" onclick="selectModalPreset('stopwatch')"><span class="material-symbols-outlined">arrow_back</span> Presets</button>
+                    <div class="stepper-display-wrapper">
+                        <div class="stepper-display" id="stepper-time-display">00:00:00</div>
+                        <button type="button" class="stepper-reset-btn" title="Reset to 00:00:00" onclick="resetCustomSeconds()"><span class="material-symbols-outlined">replay</span></button>
+                    </div>
+                    <div class="stepper-controls">
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(10)">+10s</button>
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(60)">+1m</button>
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(3600)">+1h</button>
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(-10)">-10s</button>
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(-60)">-1m</button>
+                        <button type="button" class="step-btn" onclick="adjustCustomSeconds(-3600)">-1h</button>
+                    </div>
+                </div>
+
+                <div class="modal-actions-row">
+                    <button type="button" class="modal-btn btn-reset" onclick="resetCurrentTimer()"><span class="material-symbols-outlined">close</span> Exit</button>
+                    <button type="button" class="modal-btn btn-save" onclick="saveTimerModal()"><span class="material-symbols-outlined">check</span> Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREENSAVER OVERLAY (TIME, DATE & BOUNCING PARTICLE) -->
+    <div id="screensaver-overlay" class="screensaver-overlay hidden" onclick="wakeFromScreensaver()">
+        <canvas id="screensaver-canvas" class="screensaver-canvas"></canvas>
+        <div id="screensaver-widget" class="screensaver-widget">
+            <div id="screensaver-time" class="screensaver-time">12:00:00 PM</div>
+            <div id="screensaver-date" class="screensaver-date">Saturday, Aug 22</div>
+        </div>
+    </div>
+
+    <script src="hardware-serial.js"></script>
+    <script src="index.js"></script>
+</body>
+</html>

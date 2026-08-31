@@ -1,0 +1,226 @@
+/* ========================================================
+   THEME.CSS - Centralized Color & Theme Styles
+   Used across Macropad (index.html) and Settings (settings.html)
+   ======================================================== */
+
+/* Base Button Color Profiles (Default) */
+.c-edit { background: linear-gradient(135deg, #2980b9, #2573a7); color: #ffffff; }
+.c-danger { background: linear-gradient(135deg, #c0392b, #a62c1f); color: #ffffff; }
+.c-system { background: linear-gradient(135deg, #27ae60, #219653); color: #ffffff; }
+.c-util { background: linear-gradient(135deg, #8e44ad, #7d3c98); color: #ffffff; }
+.c-nav { background: linear-gradient(135deg, #f39c12, #d35400); color: #ffffff; }
+.c-gray { background: linear-gradient(135deg, #4b5563, #374151); color: #ffffff; }
+.c-black { background: linear-gradient(135deg, #181a1f, #0d0f12); color: #ffffff; }
+.c-white { background: linear-gradient(135deg, #ffffff, #e2e8f0); color: #0f172a; }
+
+/* ========================================================
+   1. CYBERPUNK NEON
+   ======================================================== */
+body[data-theme="cyberpunk"] { background-color: #0b0813; }
+body[data-theme="cyberpunk"] .macro-btn {
+    border: 2px solid rgba(0, 240, 255, 0.4);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.3);
+}
+body[data-theme="cyberpunk"] .preview-panel {
+    background-color: #0b0813;
+    border-color: rgba(0, 240, 255, 0.4);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+}
+body[data-theme="cyberpunk"] .preview-btn {
+    border: 2px solid rgba(0, 240, 255, 0.4);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+}
+body[data-theme="cyberpunk"] .c-edit { background: linear-gradient(135deg, #00f0ff, #0077fe); color: #000; font-weight: 800; }
+body[data-theme="cyberpunk"] .c-system { background: linear-gradient(135deg, #05ffa1, #00b86b); color: #000; font-weight: 800; }
+body[data-theme="cyberpunk"] .c-util { background: linear-gradient(135deg, #ff007f, #9b00e8); color: #fff; }
+body[data-theme="cyberpunk"] .c-nav { background: linear-gradient(135deg, #ffe600, #ff5e00); color: #000; font-weight: 800; }
+body[data-theme="cyberpunk"] .c-danger { background: linear-gradient(135deg, #ff003c, #990024); color: #fff; }
+body[data-theme="cyberpunk"] .c-gray { background: linear-gradient(135deg, #241c38, #130e20); color: #00f0ff; border: 1px solid #ff007f; }
+body[data-theme="cyberpunk"] .c-black { background: #08050e; color: #05ffa1; border: 2px solid #00f0ff; }
+body[data-theme="cyberpunk"] .c-white { background: #e0f7fa; color: #0b0813; }
+
+/* ========================================================
+   2. RETRO SYNTHWAVE
+   ======================================================== */
+body[data-theme="synthwave"] { background-color: #1a0826; }
+body[data-theme="synthwave"] .macro-btn {
+    border: 2px solid rgba(255, 113, 206, 0.5);
+    box-shadow: 0 4px 14px rgba(255, 113, 206, 0.35);
+}
+body[data-theme="synthwave"] .preview-panel {
+    background-color: #1a0826;
+    border-color: rgba(255, 113, 206, 0.4);
+    box-shadow: 0 0 20px rgba(255, 113, 206, 0.2);
+}
+body[data-theme="synthwave"] .preview-btn {
+    border: 2px solid rgba(255, 113, 206, 0.5);
+    box-shadow: 0 4px 10px rgba(255, 113, 206, 0.3);
+}
+body[data-theme="synthwave"] .c-edit { background: linear-gradient(135deg, #01cdfe, #0575e6); color: #fff; }
+body[data-theme="synthwave"] .c-system { background: linear-gradient(135deg, #05ffa1, #00b4d8); color: #000; }
+body[data-theme="synthwave"] .c-util { background: linear-gradient(135deg, #b967ff, #6b11ff); color: #fff; }
+body[data-theme="synthwave"] .c-nav { background: linear-gradient(135deg, #ff71ce, #ff007f); color: #fff; }
+body[data-theme="synthwave"] .c-danger { background: linear-gradient(135deg, #ff2a6d, #9d0208); color: #fff; }
+body[data-theme="synthwave"] .c-gray { background: linear-gradient(135deg, #321e4d, #1f1033); color: #ff71ce; }
+body[data-theme="synthwave"] .c-black { background: #12031e; color: #01cdfe; border: 2px solid #ff71ce; }
+body[data-theme="synthwave"] .c-white { background: #ffe4f7; color: #240046; }
+
+/* ========================================================
+   3. EMERALD MATRIX
+   ======================================================== */
+body[data-theme="matrix"] { background-color: #020d06; }
+body[data-theme="matrix"] .macro-btn {
+    border: 1px solid rgba(0, 255, 65, 0.6);
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.25);
+}
+body[data-theme="matrix"] .preview-panel {
+    background-color: #020d06;
+    border-color: rgba(0, 255, 65, 0.4);
+    box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+}
+body[data-theme="matrix"] .preview-btn {
+    border: 1px solid rgba(0, 255, 65, 0.6);
+    box-shadow: 0 0 8px rgba(0, 255, 65, 0.25);
+}
+body[data-theme="matrix"] .c-edit { background: linear-gradient(135deg, #00ff41, #008f11); color: #000; font-weight: 800; }
+body[data-theme="matrix"] .c-system { background: linear-gradient(135deg, #00ff88, #006633); color: #000; font-weight: 800; }
+body[data-theme="matrix"] .c-util { background: linear-gradient(135deg, #00cc66, #004d26); color: #fff; }
+body[data-theme="matrix"] .c-nav { background: linear-gradient(135deg, #33ff33, #1a801a); color: #000; }
+body[data-theme="matrix"] .c-danger { background: linear-gradient(135deg, #ff3333, #800000); color: #fff; }
+body[data-theme="matrix"] .c-gray { background: linear-gradient(135deg, #0a2912, #041408); color: #00ff41; }
+body[data-theme="matrix"] .c-black { background: #000000; color: #00ff41; border: 1px solid #00ff41; }
+body[data-theme="matrix"] .c-white { background: #d0ffdb; color: #003300; }
+
+/* ========================================================
+   4. MIDNIGHT GLASS
+   ======================================================== */
+body[data-theme="midnight"] { background-color: #080e1a; }
+body[data-theme="midnight"] .macro-btn {
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+body[data-theme="midnight"] .preview-panel {
+    background-color: #080e1a;
+    border-color: rgba(255, 255, 255, 0.15);
+}
+body[data-theme="midnight"] .preview-btn {
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+body[data-theme="midnight"] .c-edit { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; }
+body[data-theme="midnight"] .c-system { background: linear-gradient(135deg, #059669, #047857); color: #ffffff; }
+body[data-theme="midnight"] .c-util { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; }
+body[data-theme="midnight"] .c-nav { background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; }
+body[data-theme="midnight"] .c-danger { background: linear-gradient(135deg, #dc2626, #b91c1c); color: #ffffff; }
+body[data-theme="midnight"] .c-gray { background: linear-gradient(135deg, #334155, #1e293b); color: #ffffff; }
+body[data-theme="midnight"] .c-black { background: #0f172a; color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); }
+body[data-theme="midnight"] .c-white { background: #f8fafc; color: #0f172a; }
+
+/* ========================================================
+   5. MINIMALIST MONOCHROME
+   ======================================================== */
+body[data-theme="monochrome"] { background-color: #121212; }
+body[data-theme="monochrome"] .macro-btn {
+    border: 1px solid #333333;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+body[data-theme="monochrome"] .preview-panel {
+    background-color: #121212;
+    border-color: #333333;
+}
+body[data-theme="monochrome"] .preview-btn {
+    border: 1px solid #333333;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+body[data-theme="monochrome"] .c-edit { background: #262626; color: #ffffff; border-color: #555; }
+body[data-theme="monochrome"] .c-system { background: #333333; color: #ffffff; border-color: #666; }
+body[data-theme="monochrome"] .c-util { background: #404040; color: #ffffff; }
+body[data-theme="monochrome"] .c-nav { background: #4d4d4d; color: #ffffff; }
+body[data-theme="monochrome"] .c-danger { background: #1a1a1a; color: #ff6b6b; border: 1px solid #ff4444; }
+body[data-theme="monochrome"] .c-gray { background: #1e1e1e; color: #bbbbbb; }
+body[data-theme="monochrome"] .c-black { background: #000000; color: #ffffff; border: 1px solid #444; }
+body[data-theme="monochrome"] .c-white { background: #ffffff; color: #000000; }
+
+/* ========================================================
+   6. SIMPLE (BLACK & WHITE)
+   ======================================================== */
+body[data-theme="simple"] { background-color: #000000; }
+body[data-theme="simple"] .nav-btn {
+    background-color: #000000;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+}
+body[data-theme="simple"] .nav-btn.active {
+    background-color: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+body[data-theme="simple"] .nav-arrow-btn {
+    background-color: #000000;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+}
+body[data-theme="simple"] .preview-panel {
+    background-color: #000000;
+    border-color: #ffffff;
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.1);
+}
+body[data-theme="simple"] .preview-tab {
+    background: #000000;
+    border: 1px solid #ffffff;
+    color: #ffffff;
+}
+body[data-theme="simple"] .preview-tab.active {
+    background: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+}
+body[data-theme="simple"] .preview-arrow-btn {
+    background: #000000;
+    border: 1px solid #ffffff;
+    color: #ffffff;
+}
+body[data-theme="simple"] .macro-btn,
+body[data-theme="simple"] .preview-btn {
+    background: #000000 !important;
+    border: none !important;
+    color: #ffffff !important;
+    position: relative;
+}
+body[data-theme="simple"] .macro-btn::before,
+body[data-theme="simple"] .preview-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border-top: 2px solid #ffffff;
+    border-bottom: 2px solid #ffffff;
+    -webkit-mask-image: linear-gradient(to right, #000 0%, #000 35%, transparent 35%, transparent 65%, #000 65%, #000 100%);
+    mask-image: linear-gradient(to right, #000 0%, #000 35%, transparent 35%, transparent 65%, #000 65%, #000 100%);
+    pointer-events: none;
+    z-index: 1;
+}
+body[data-theme="simple"] .macro-btn::after,
+body[data-theme="simple"] .preview-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border-left: 2px solid #ffffff;
+    border-right: 2px solid #ffffff;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 35%, transparent 35%, transparent 65%, #000 65%, #000 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 35%, transparent 35%, transparent 65%, #000 65%, #000 100%);
+    pointer-events: none;
+    z-index: 1;
+}
+body[data-theme="simple"] .c-edit { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-system { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-util { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-nav { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-danger { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-gray { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-black { background: #000000; color: #ffffff; border: none; }
+body[data-theme="simple"] .c-white { background: #ffffff !important; color: #000000 !important; border: none; }

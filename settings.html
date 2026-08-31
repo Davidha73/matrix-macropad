@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Macropad</title>
+    <link rel="icon" type="image/x-icon" href="assets/matrix-icon-256.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <link rel="stylesheet" href="settings.css">
+    <link rel="stylesheet" href="theme-builder.css">
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+    <header class="settings-header">
+        <div class="header-brand">
+            <img src="assets/tray-icon@2x.png" alt="Logo" class="header-app-logo" onerror="this.style.display='none'">
+            <!-- <span class="material-symbols-outlined header-icon">tune</span> -->
+            <div class="header-titles">
+                <h1>Matrix Macropad Configuration</h1>
+                <span class="header-app-version">v2.50</span>
+            </div>
+        </div>
+        <div class="window-controls">
+            <button type="button" class="win-btn theme-toggle-btn" id="app-theme-toggle-btn" title="Toggle Light / Dark Theme" onclick="toggleAppTheme()">
+                <span class="material-symbols-outlined" id="app-theme-toggle-icon">light_mode</span>
+            </button>
+            <div class="win-btn-divider"></div>
+            <button type="button" class="win-btn win-minimize-btn" id="win-min-btn" title="Minimize" onclick="minimizeAppWindow()">
+                <span class="material-symbols-outlined">minimize</span>
+            </button>
+            <button type="button" class="win-btn win-maximize-btn" id="win-max-btn" title="Maximize / Restore" onclick="toggleMaximizeAppWindow()">
+                <span class="material-symbols-outlined" id="win-max-icon">crop_square</span>
+            </button>
+            <button type="button" class="win-btn win-close-btn" id="win-close-btn" title="Close" onclick="closeAppWindow()">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="layout-wrapper">
+        <!-- LEFT: VISUAL MACROPAD PREVIEW & ACTIONS PANEL -->
+        <div class="left-column">
+            <div class="preview-panel">
+                <h3>Macropad Preview</h3>
+                <div class="preview-nav">
+                    <button type="button" class="preview-arrow-btn" id="prev-page-btn" onclick="prevPage()"><span class="material-symbols-outlined">chevron_left</span></button>
+                    <div class="preview-track-viewport">
+                        <div class="preview-track" id="preview-nav-tabs"></div>
+                    </div>
+                    <button type="button" class="preview-arrow-btn" id="next-page-btn" onclick="nextPage()"><span class="material-symbols-outlined">chevron_right</span></button>
+                </div>
+                <div class="preview-grid" id="preview-grid"></div>
+            </div>
+            <!-- LAYOUT MANAGEMENT CARD -->
+            <div class="layout-profile-card">
+                <div class="layout-card-header">
+                    <span class="layout-card-title"><span class="material-symbols-outlined">folder_open</span> Layout Profile</span>
+                    <div class="layout-badge">Current: <span id="current-layout-name">Default (Active)</span></div>
+                </div>
+                <div class="layout-card-actions">
+                    <button type="button" class="layout-action-btn" onclick="loadLayoutFile()"><span class="material-symbols-outlined">file_open</span> Load...</button>
+                    <button type="button" class="layout-action-btn" onclick="saveLayoutFile()"><span class="material-symbols-outlined">save_as</span> Save As...</button>
+                    <button type="button" class="layout-action-btn btn-restore" onclick="restoreDefaultLayout()"><span class="material-symbols-outlined">restart_alt</span> Restore Default</button>
+
+                </div>
+            </div>
+
+            <!-- HARDWARE CONTROLLER STATUS CARD -->
+            <div class="layout-profile-card hardware-card">
+                <div class="layout-card-header">
+                    <span class="layout-card-title"><span class="material-symbols-outlined">developer_board</span> Hardware Pad</span>
+                    <div class="layout-badge badge-disconnected" id="hardware-status-badge">Disconnected</div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn cancel" id="close-btn" onclick="handleCloseRequest()"><span class="material-symbols-outlined">close</span> Close</button>
+                <button class="btn save" id="save-btn" onclick="saveSettings()"><span class="material-symbols-outlined">check</span> Saved</button>
+            </div>
+
+        </div>
+
+
+        <!-- RIGHT: FORM CONFIGURATION PANEL -->
+        <div class="right-column">
+            <!-- SYSTEM & DISPLAY SETTINGS -->
+            <div class="profile-toolbar">
+                <!-- Top-Left: Screensaver Controls -->
+                <div class="system-control-group">
+                    <label for="screensaver-select" class="theme-header-label"><span class="material-symbols-outlined">schedule</span> Screensaver</label>
+                    <div class="screensaver-controls-row">
+                        <select id="screensaver-select" class="theme-select screensaver-select" onchange="onScreensaverChange()" title="Screensaver timeout">
+                            <option value="0">Off</option>
+                            <option value="10">10 seconds</option>
+                            <option value="300">5 minutes</option>
+                            <option value="600">10 minutes</option>
+                            <option value="1800">30 minutes</option>
+                        </select>
+                        <select id="screensaver-anim-select" class="theme-select screensaver-anim-select" onchange="onScreensaverAnimChange()" title="Select screensaver animation style">
+                            <option value="bouncing_clock">Bouncing Clock HUD</option>
+                            <option value="matrix_rain">Matrix Digital Rain</option>
+                            <option value="pulsing_glow">Pulsing Glow Clock</option>
+                            <option value="starfield">Starfield Warp</option>
+                            <option value="screen_off">Turn Screen Off</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Top-Right: Theme Control Group -->
+                <div class="system-control-group">
+                    <label for="theme-select" class="theme-header-label"><span class="material-symbols-outlined">palette</span> Global Theme</label>
+                    <div class="theme-controls-row">
+                        <select id="theme-select" class="theme-select" onchange="onThemeChange()">
+                            <option value="default">Default</option>
+                            <option value="simple">Simple (Black & White)</option>
+                            <option value="cyberpunk">Cyberpunk Neon</option>
+                            <option value="synthwave">Retro Synthwave</option>
+                            <option value="matrix">Emerald Matrix</option>
+                            <option value="midnight">Midnight Glass</option>
+                            <option value="monochrome">Minimalist Monochrome</option>
+                        </select>
+                        <button type="button" class="profile-btn icon-only" onclick="openThemeManagerModal()" title="Theme Builder & Library"><span class="material-symbols-outlined">palette</span></button>
+                    </div>
+                </div>
+
+                <!-- Bottom-Left: Brightness Control Group -->
+                <div class="system-control-group brightness-group">
+                    <div class="slider-label-row">
+                        <label for="brightness-slider" class="theme-header-label"><span class="material-symbols-outlined">wb_sunny</span> Brightness</label>
+                        <span class="slider-badge" id="brightness-val">50%</span>
+                    </div>
+                    <div class="brightness-slider-row">
+                        <input type="range" id="brightness-slider" class="brightness-slider" min="10" max="100" value="50" oninput="onBrightnessChange(this.value)">
+                    </div>
+                </div>
+
+                <!-- Bottom-Right: Volume Control Group -->
+                <div class="system-control-group brightness-group">
+                    <div class="slider-label-row">
+                        <label for="volume-slider" class="theme-header-label"><span class="material-symbols-outlined">volume_up</span> Click Volume</label>
+                        <span class="slider-badge" id="volume-val">33%</span>
+                    </div>
+                    <div class="brightness-slider-row">
+                        <input type="range" id="volume-slider" class="brightness-slider" min="0" max="100" value="33" oninput="onVolumeChange(this.value)">
+                    </div>
+                </div>
+            </div>
+
+            <div class="page-name-control">
+                <div class="page-name-field">
+                    <label for="page-name-input"><span class="material-symbols-outlined page-tab-icon">tab</span> Page Tab Name</label>
+                    <div class="input-clear-wrapper">
+                        <input type="text" id="page-name-input" oninput="onPageNameChange()">
+                        <button type="button" class="input-clear-btn" title="Clear" onclick="clearInput('page-name-input', 'onPageNameChange')">✕</button>
+                    </div>
+                </div>
+                <div class="screen-bg-field">
+                    <label for="screen-bg-select"><span class="material-symbols-outlined screen-bg-icon">format_paint</span> Screen BG</label>
+                    <div class="color-picker-wrapper screen-bg-control-row">
+                        <select id="screen-bg-select" onchange="onScreenBgSelectChange()">
+                            <!-- Populated dynamically -->
+                        </select>
+                        <div class="custom-screen-bg-inline" id="custom-screen-bg-row">
+                            <input type="color" class="color-picker-input screen-bg-picker" id="screen-bg-picker" value="#0f1115" oninput="onCustomScreenBgInputChange(this.value)" title="Choose custom screen background color">
+                            <input type="text" class="color-text-input screen-bg-hex-input" id="screen-bg-hex" value="#0F1115" oninput="onCustomScreenBgInputChange(this.value)" placeholder="#HEX">
+                        </div>
+                    </div>
+                </div>
+                <div class="page-manage-buttons" id="page-manage-buttons">
+                    <button type="button" class="page-action-btn move-page-btn" id="move-left-btn" onclick="moveCurrentPage(-1)" title="Move active page left"><span class="material-symbols-outlined">arrow_back</span><span class="btn-text"> Move Left</span></button>
+                    <button type="button" class="page-action-btn move-page-btn" id="move-right-btn" onclick="moveCurrentPage(1)" title="Move active page right"><span class="material-symbols-outlined">arrow_forward</span><span class="btn-text"> Move Right</span></button>
+                    <button type="button" class="page-action-btn add-page-btn" onclick="addNewPage()" title="Add new page"><span class="material-symbols-outlined">add</span><span class="btn-text"> Add Page</span></button>
+                    <button type="button" class="page-action-btn del-page-btn" id="del-page-btn" onclick="deleteCurrentPage()" title="Delete active page"><span class="material-symbols-outlined">delete</span><span class="btn-text"> Delete Page</span></button>
+                </div>
+            </div>
+            <div class="settings-grid" id="settings-fields"></div>
+
+            <!-- SHORTCUT PICKER MODAL (RIGHT PANE OVERLAY) -->
+            <div id="shortcut-picker-modal" class="modal-overlay right-pane-overlay">
+                <div class="shortcut-picker-card">
+                    <div class="shortcut-picker-header">
+                        <div class="shortcut-picker-title">
+                            <span class="material-symbols-outlined">keyboard</span>
+                            <span>Choose Shortcut or Hotkey</span>
+                        </div>
+                        <button type="button" class="modal-close-btn" onclick="closeShortcutPickerModal()"><span class="material-symbols-outlined">close</span></button>
+                    </div>
+                    <div class="shortcut-picker-search-row">
+                        <div class="input-clear-wrapper">
+                            <input type="text" id="shortcut-picker-search" placeholder="Search shortcuts (e.g. Snipping, Copy, Volume, Win+E, Task View)..." oninput="filterShortcutPicker()">
+                            <button type="button" class="input-clear-btn" onclick="clearShortcutPickerSearch()">✕</button>
+                        </div>
+                    </div>
+                    <div class="shortcut-picker-categories" id="shortcut-picker-categories"></div>
+                    <div class="shortcut-picker-grid" id="shortcut-picker-grid"></div>
+
+                    <div class="shortcut-custom-footer">
+                        <div class="custom-recorder-label">
+                            <span class="material-symbols-outlined">fiber_manual_record</span>
+                            <span>Custom Key Combination:</span>
+                        </div>
+                        <input type="text" id="shortcut-modal-record-input" placeholder="Click here and press hotkey on keyboard..." onkeydown="handleModalHotkeyRecord(event)">
+                        <button type="button" class="btn save" id="shortcut-apply-custom-btn" onclick="applyModalCustomHotkey()">Use Keypress</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MATERIAL ICON PICKER MODAL -->
+    <div id="icon-picker-modal" class="modal-overlay">
+        <div class="icon-picker-card">
+            <div class="icon-picker-header">
+                <div class="icon-picker-title">
+                    <span class="material-symbols-outlined">category</span>
+                    <span>Choose Material Icon</span>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeIconPickerModal()"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <div class="icon-picker-search-row">
+                <div class="input-clear-wrapper">
+                    <input type="text" id="icon-picker-search" placeholder="Search icons (e.g. play, volume, copy, lock, power)..." oninput="filterIconPicker()">
+                    <button type="button" class="input-clear-btn" onclick="clearInput('icon-picker-search', 'filterIconPicker')">✕</button>
+                </div>
+            </div>
+            <div class="icon-picker-categories" id="icon-picker-categories"></div>
+            <div class="icon-picker-grid" id="icon-picker-grid"></div>
+        </div>
+    </div>
+
+    <!-- THEME MANAGER & BUILDER MODAL -->
+    <div id="theme-manager-modal" class="modal-overlay">
+        <div class="theme-manager-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="material-symbols-outlined theme-modal-icon">palette</span>
+                    <h2>Theme Builder & Manager</h2>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeThemeManagerModal()"><span class="material-symbols-outlined">close</span></button>
+            </div>
+
+            <div class="theme-manager-tabs">
+                <button type="button" class="theme-tab-btn active" id="tab-btn-library" onclick="switchThemeModalTab('library')">
+                    <span class="material-symbols-outlined">style</span> Theme Library
+                </button>
+                <button type="button" class="theme-tab-btn" id="tab-btn-builder" onclick="switchThemeModalTab('builder')">
+                    <span class="material-symbols-outlined">tune</span> Theme Builder
+                </button>
+            </div>
+
+            <!-- Tab 1: Theme Library (Built-in + Custom) -->
+            <div class="theme-tab-content active" id="theme-tab-library">
+                <div class="theme-library-toolbar">
+                    <button type="button" class="theme-action-btn primary" onclick="startNewThemeBuilder()"><span class="material-symbols-outlined">add_circle</span> Create New Theme</button>
+                    <button type="button" class="theme-action-btn" onclick="importThemeJSON()"><span class="material-symbols-outlined">file_open</span> Import Theme...</button>
+                    <button type="button" class="theme-action-btn" onclick="captureCurrentLayoutAsTheme()"><span class="material-symbols-outlined">auto_fix_high</span> Save Current Layout as Theme</button>
+                </div>
+                <div class="theme-cards-grid" id="theme-cards-grid"></div>
+            </div>
+
+            <!-- Tab 2: Theme Builder -->
+            <div class="theme-tab-content" id="theme-tab-builder">
+                <div class="theme-builder-form">
+                    <div class="theme-builder-row">
+                        <div class="field-col">
+                            <label>Theme Name</label>
+                            <input type="text" id="builder-theme-name" placeholder="e.g. Neon Cyber Wave" value="My Custom Theme">
+                        </div>
+                        <div class="field-col">
+                            <label>Pad Background Color</label>
+                            <div class="color-input-group">
+                                <input type="color" class="color-picker-input" id="builder-bg-picker" value="#000000" oninput="onBuilderBgChange(this.value)">
+                                <input type="text" class="color-text-input" id="builder-bg-val" value="#000000" oninput="onBuilderBgChange(this.value)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="theme-builder-section-title">Default Button Border & Framing</div>
+                    <div class="theme-builder-border-grid">
+                        <div class="field-col">
+                            <label>Border Style</label>
+                            <select id="builder-border-style">
+                                <option value="none">None</option>
+                                <option value="solid">Solid</option>
+                                <option value="dashed">Dashed</option>
+                                <option value="dotted">Dotted</option>
+                                <option value="double">Double</option>
+                                <option value="brackets" selected>Corner Brackets (Reticle)</option>
+                                <option value="glow">Neon Glow</option>
+                            </select>
+                        </div>
+                        <div class="field-col">
+                            <label>Border Width</label>
+                            <select id="builder-border-width">
+                                <option value="1">1px</option>
+                                <option value="2" selected>2px</option>
+                                <option value="3">3px</option>
+                                <option value="4">4px</option>
+                            </select>
+                        </div>
+                        <div class="field-col">
+                            <label>Corner Radius</label>
+                            <select id="builder-border-radius">
+                                <option value="0">Sharp</option>
+                                <option value="8">Subtle</option>
+                                <option value="16">Rounded</option>
+                                <option value="24" selected>Classic (Default)</option>
+                                <option value="36">Curved</option>
+                                <option value="48">Large</option>
+                                <option value="64">Extra Large</option>
+                                <option value="80">Pill</option>
+                                <option value="120">Full Oval</option>
+                            </select>
+                        </div>
+                        <div class="field-col">
+                            <label>Border Color</label>
+                            <div class="color-input-group">
+                                <input type="color" class="color-picker-input" id="builder-border-color-picker" value="#ffffff" oninput="onBuilderBorderColorChange(this.value)">
+                                <input type="text" class="color-text-input" id="builder-border-color-val" value="#ffffff" oninput="onBuilderBorderColorChange(this.value)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="theme-builder-section-title">Button Palette Mappings</div>
+                    <div class="theme-palette-editor" id="theme-palette-editor"></div>
+
+                    <div class="theme-builder-actions">
+                        <button type="button" class="theme-action-btn" onclick="switchThemeModalTab('library')"><span class="material-symbols-outlined">arrow_back</span> Back to Library</button>
+                        <button type="button" class="theme-action-btn primary" onclick="saveBuilderTheme()"><span class="material-symbols-outlined">save</span> Save Theme to Library</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION POP-UP MODAL -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="confirm-modal-box">
+            <div class="confirm-modal-header">
+                <span class="material-symbols-outlined confirm-modal-icon">warning</span>
+                <h3 id="confirm-modal-title">Delete Page</h3>
+            </div>
+            <p id="confirm-modal-message" class="confirm-modal-message">Are you sure you want to delete this page? This action cannot be undone.</p>
+            <div class="confirm-modal-actions">
+                <button type="button" class="btn cancel" id="confirm-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-modal-confirm"><span class="material-symbols-outlined">delete</span> Delete Page</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UNSAVED CHANGES CONFIRMATION POP-UP MODAL -->
+    <div id="unsaved-modal" class="modal-overlay">
+        <div class="confirm-modal-box">
+            <div class="confirm-modal-header">
+                <span class="material-symbols-outlined confirm-modal-icon">warning</span>
+                <h3>Unsaved Changes</h3>
+            </div>
+            <p class="confirm-modal-message">You have unsaved changes in your layout. Do you want to save them before closing?</p>
+            <div class="confirm-modal-actions">
+                <button type="button" class="btn cancel" onclick="dismissUnsavedModal()">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="closeWithoutSaving()"><span class="material-symbols-outlined">close</span> Don't Save</button>
+                <button type="button" class="btn save" onclick="saveAndClose()"><span class="material-symbols-outlined">save</span> Save & Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="settings-icons.js"></script>
+    <script src="settings-shortcuts.js"></script>
+    <script src="settings-preview.js"></script>
+    <script src="settings-io.js"></script>
+    <script src="theme-builder.js"></script>
+    <script src="hardware-serial.js"></script>
+    <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+run these commands in your terminal or command prompt to set up the project folder:
+
+mkdir matrix-macropad (change to projects folder)
+cd matrix-macropad
+npm init -y
+npm install electron --save-dev
+npm install @nut-tree/nut-js
+
+------------------------------------------------------------------------------------------------------
+
+Run the Macro Pad
+Open your package.json file. (The package.json file was automatically created inside your matrix-macropad folder when you ran the npm init -y command)
+Ensure the "main" property points to "main.js".
+Add a "start" script so the file looks like this:
+
+json
+
+{
+  "name": "matrix-macropad",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@nut-tree/nut-js": "^4.2.1"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
+
+--------------------------------------------------------------------------------------------------------
+
+Drag your terminal window over to your 5-inch monitor and type:
+
+npm start
+
+--------------------------------------------------------------------------------------------------------
+
+Create scripts...
+
+For macOS (One-Click Application Launcher)
+1. Open the built-in Script Editor app on your Mac (Search using Cmd + Space).
+2. Paste the following line (replace /path/to/matrix-macropad with your folder's actual directory):
+
+do shell script "cd /path/to/matrix-macropad && npm start > /dev/null 2>&1 &"
+
+3. Click File > Export. Set the file format dropdown to Application and save it to your Applications folder or Desktop.
+4. Now, double-clicking that icon will launch the macro pad on your screen in the background without launching a Terminal terminal view.
+
+For Windows (Double-Click .bat Executable Shortcut)
+1. Inside your matrix-macropad project directory, create a new text file.
+2. Name it run_macropad.bat (Ensure the extension changes from .txt to .bat).
+3. Right-click and edit it, pasting the following lines:
+
+@echo off
+cd /d "%~dp0"
+start /b npm start
+exit
+
+4. Double-clicking this batch file will launch the engine directly onto your external display and automatically close out the command window instantly.
