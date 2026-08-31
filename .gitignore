@@ -12,3 +12,6 @@ extract-wincodesign.js
 inject-autoupdater.js
 generate-icons.js
 generate-icons.ps1
+node_modules_mac/
+firmware/.pio/
+firmware/.pioenvs/
