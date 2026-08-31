@@ -4,6 +4,22 @@ Desktop bridge, layout configurator, and serial sync engine for the **ESP32-S3 (
 
 ---
 
+## 📥 Download & Install (Ready-to-Use)
+
+You don't need to build from source to use Matrix Macropad! Pre-built standalone installers are available on the **[Releases Page](https://github.com/Davidha73/matrix-macropad/releases)**.
+
+### 🪟 Windows
+1. Download **`Matrix Macropad Setup X.X.X.exe`** (or the portable `Matrix Macropad X.X.X.exe`).
+2. Double-click the installer and follow the setup wizard.
+3. The app will create Desktop and Start Menu shortcuts and run in your system tray.
+
+### 🍏 macOS
+1. Download **`Matrix Macropad-X.X.X.dmg`**.
+2. Open the `.dmg` and drag **Matrix Macropad** into your **Applications** folder.
+3. Launch the app from Applications or Spotlight.
+
+---
+
 ## ✨ Features
 
 - **Live Touchscreen Synchronization:** Seamlessly streams active page configurations, widget labels, icons, colors, and layouts to the ESP32-S3 over USB Serial.
@@ -15,7 +31,7 @@ Desktop bridge, layout configurator, and serial sync engine for the **ESP32-S3 (
 
 ---
 
-## 🚀 Getting Started
+## 🛠️ Developer Setup (Run from Source)
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18 or higher recommended)
