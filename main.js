@@ -611,6 +611,128 @@ function createHardwareProfileData(config) {
 let isSyncingHardware = false;
 let pendingSyncConfig = null;
 
+function generatePageButtonList(config, p) {
+  const activeTheme = config._theme || 'default';
+  const now = new Date();
+  const rawTitle = config[`p${p}-name`] || `Page ${p}`;
+  const pageTitle = rawTitle.replace(/[^\x20-\x7E]/g, '').trim() || rawTitle;
+
+  const buttonList = [];
+  for (let b = 1; b <= 6; b++) {
+    const item = config[`p${p}-b${b}`] || {};
+    const hasExplicitLabel = item.label !== undefined || config[`p${p}-b${b}-label`] !== undefined;
+    let rawLabel = item.label !== undefined ? item.label : (config[`p${p}-b${b}-label`] !== undefined ? config[`p${p}-b${b}-label`] : `Button ${b}`);
+    let rawShortcut = item.value || item.shortcut || config[`p${p}-b${b}-value`] || '';
+
+    const action = item.type || 'shortcut';
+    let btnType = action;
+    let btnDuration = 0;
+    if (action === 'clock') {
+      rawLabel = formatHardwareTime(now, item.format || '12h-sec');
+      rawShortcut = 'Live Clock';
+    } else if (action === 'date') {
+      rawLabel = formatHardwareDate(now, item.format || 'standard');
+      rawShortcut = 'Date';
+    } else if (action === 'timer' || action === 'stopwatch' || action === 'countdown') {
+      if (item.timerMode === 'stopwatch' || action === 'stopwatch') {
+        btnType = 'stopwatch';
+        btnDuration = 0;
+        rawLabel = '00:00';
+      } else {
+        btnType = 'countdown';
+        btnDuration = item.duration !== undefined ? parseInt(item.duration, 10) : (item.timerMode === 'custom' ? parseInt(item.timerDuration || 300, 10) : parseInt(item.timerMode || 300, 10));
+        if (isNaN(btnDuration) || btnDuration <= 0) btnDuration = 300;
+        const m = Math.floor(btnDuration / 60);
+        const s = btnDuration % 60;
+        rawLabel = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+      rawShortcut = item.duration ? `${item.duration}s` : (item.timerMode === 'custom' ? `${item.timerDuration || 300}s` : (item.timerMode || '300s'));
+    }
+
+    let cleanLabel = rawLabel.replace(/\[[a-zA-Z0-9_]+\]/g, '').replace(/[^\x20-\x7E]/g, '').trim();
+    if (!hasExplicitLabel && !cleanLabel) {
+      cleanLabel = `Button ${b}`;
+    }
+    let cleanShortcut = rawShortcut.replace(/[^\x20-\x7E]/g, '').trim() || rawShortcut.trim();
+
+    const style = resolveButtonFullStyle(item, activeTheme);
+
+    let iconVal = getButtonIconHardwareName(item, p, b);
+    if (!iconVal && item.materialIcon) {
+      iconVal = item.materialIcon;
+    }
+    if (!iconVal && rawLabel) {
+      const match = rawLabel.match(/\[([a-zA-Z0-9_]+)\]/);
+      if (match) {
+        iconVal = match[1];
+      }
+    }
+
+    let subButtonsList = undefined;
+    const rawSubButtons = item.sub_buttons || item.children;
+    if (Array.isArray(rawSubButtons) && rawSubButtons.length > 0) {
+      subButtonsList = rawSubButtons.slice(0, 6).map((sub, sIdx) => {
+        const subStyle = resolveButtonFullStyle(sub, activeTheme);
+        let subIconVal = getButtonIconHardwareName(sub, p, b, sIdx + 1);
+        if (!subIconVal && sub.materialIcon) {
+          subIconVal = sub.materialIcon;
+        }
+        if (!subIconVal && sub.label) {
+          const match = sub.label.match(/\[([a-zA-Z0-9_]+)\]/);
+          if (match) {
+            subIconVal = match[1];
+          }
+        }
+        return {
+          id: sub.id !== undefined ? sub.id : (sIdx + 1),
+          label: (sub.label || `Button ${sIdx + 1}`).replace(/[^\x20-\x7E]/g, '').trim(),
+          type: sub.type || 'shortcut',
+          payload: sub.payload || sub.value || '',
+          bg_color: sub.bg_color || sub.bgColor || subStyle.bg || '#2E3440',
+          text_color: sub.text_color || sub.textColor || subStyle.textColor || '#FFFFFF',
+          icon_color: sub.customIconColor && sub.customIconColor !== 'same_as_text' && sub.customIconColor.startsWith('#') ? sub.customIconColor : (sub.text_color || sub.textColor || subStyle.textColor || '#FFFFFF'),
+          border_color: sub.border_color || sub.borderColor || subStyle.borderColor || '#34495e',
+          border_width: sub.border_width !== undefined ? sub.border_width : (sub.borderWidth !== undefined ? sub.borderWidth : 1),
+          border_radius: sub.border_radius !== undefined ? sub.border_radius : (sub.borderRadius !== undefined ? sub.borderRadius : 24),
+          icon: subIconVal
+        };
+      });
+    }
+
+    buttonList.push({
+      label: cleanLabel,
+      shortcut: cleanShortcut,
+      action,
+      type: btnType,
+      duration: btnDuration,
+      bg: style.bg,
+      bg2: style.bg2,
+      customAngle: item.customAngle !== undefined ? parseInt(item.customAngle, 10) : (item.customGradientDir === 'horizontal' ? 90 : 180),
+      textColor: style.textColor,
+      iconColor: style.iconColor,
+      borderColor: style.borderColor,
+      borderWidth: style.borderWidth,
+      borderStyle: item.borderStyle || (style.borderWidth > 0 ? 'solid' : 'none'),
+      borderDashGap: item.borderDashGap !== undefined ? parseInt(item.borderDashGap, 10) : 8,
+      borderDashLength: item.borderDashLength !== undefined ? parseInt(item.borderDashLength, 10) : 12,
+      borderBracketLength: item.borderBracketLength !== undefined ? parseInt(item.borderBracketLength, 10) : 35,
+      radius: style.radius,
+      fontSize: style.fontSize || 68,
+      icon: iconVal,
+      iconFit: item.iconFit || 'contain',
+      sub_buttons: subButtonsList
+    });
+  }
+  return { pageTitle, buttonList };
+}
+
+function syncSinglePageToHardware(p, config, silent = true) {
+  if (!hardwareSerialPort || !hardwareSerialPort.isOpen) return;
+  const totalPages = getDynamicTotalPages(config);
+  const { pageTitle, buttonList } = generatePageButtonList(config, p);
+  hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, buttons: buttonList, silent: !!silent }) + '\n');
+}
+
 async function syncAllPagesToHardware(passedConfig, forceAssets = true) {
   if (!hardwareSerialPort || !hardwareSerialPort.isOpen) return;
   if (isSyncingHardware) {
@@ -630,103 +752,7 @@ async function syncAllPagesToHardware(passedConfig, forceAssets = true) {
     const now = new Date();
 
     for (let p = 1; p <= totalPages; p++) {
-      const rawTitle = config[`p${p}-name`] || `Page ${p}`;
-      const pageTitle = rawTitle.replace(/[^\x20-\x7E]/g, '').trim() || rawTitle;
-
-      const buttonList = [];
-      for (let b = 1; b <= 6; b++) {
-        const item = config[`p${p}-b${b}`] || {};
-        const hasExplicitLabel = item.label !== undefined || config[`p${p}-b${b}-label`] !== undefined;
-        let rawLabel = item.label !== undefined ? item.label : (config[`p${p}-b${b}-label`] !== undefined ? config[`p${p}-b${b}-label`] : `Button ${b}`);
-        let rawShortcut = item.value || item.shortcut || config[`p${p}-b${b}-value`] || '';
-
-        const action = item.type || 'shortcut';
-        let btnType = action;
-        let btnDuration = 0;
-        if (action === 'clock') {
-          rawLabel = formatHardwareTime(now, item.format || '12h-sec');
-          rawShortcut = 'Live Clock';
-        } else if (action === 'date') {
-          rawLabel = formatHardwareDate(now, item.format || 'standard');
-          rawShortcut = 'Date';
-        } else if (action === 'timer' || action === 'stopwatch' || action === 'countdown') {
-          if (item.timerMode === 'stopwatch' || action === 'stopwatch') {
-            btnType = 'stopwatch';
-            btnDuration = 0;
-            rawLabel = '00:00';
-          } else {
-            btnType = 'countdown';
-            btnDuration = item.duration !== undefined ? parseInt(item.duration, 10) : (item.timerMode === 'custom' ? parseInt(item.timerDuration || 300, 10) : parseInt(item.timerMode || 300, 10));
-            if (isNaN(btnDuration) || btnDuration <= 0) btnDuration = 300;
-            const m = Math.floor(btnDuration / 60);
-            const s = btnDuration % 60;
-            rawLabel = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-          }
-          rawShortcut = item.duration ? `${item.duration}s` : (item.timerMode === 'custom' ? `${item.timerDuration || 300}s` : (item.timerMode || '300s'));
-        }
-
-        let cleanLabel = rawLabel.replace(/\[[a-zA-Z0-9_]+\]/g, '').replace(/[^\x20-\x7E]/g, '').trim();
-        if (!hasExplicitLabel && !cleanLabel) {
-          cleanLabel = `Button ${b}`;
-        }
-        let cleanShortcut = rawShortcut.replace(/[^\x20-\x7E]/g, '').trim() || rawShortcut.trim();
-
-        const style = resolveButtonFullStyle(item, activeTheme);
-
-        let iconVal = getButtonIconHardwareName(item, p, b);
-        if (!iconVal && item.materialIcon) {
-          iconVal = item.materialIcon;
-        }
-
-        let subButtonsList = undefined;
-        const rawSubButtons = item.sub_buttons || item.children;
-        if (Array.isArray(rawSubButtons) && rawSubButtons.length > 0) {
-          subButtonsList = rawSubButtons.slice(0, 6).map((sub, sIdx) => {
-            const subStyle = resolveButtonFullStyle(sub, activeTheme);
-            let subIconVal = getButtonIconHardwareName(sub, p, b, sIdx + 1);
-            if (!subIconVal && sub.materialIcon) {
-              subIconVal = sub.materialIcon;
-            }
-            return {
-              id: sub.id !== undefined ? sub.id : (sIdx + 1),
-              label: (sub.label || `Button ${sIdx + 1}`).replace(/[^\x20-\x7E]/g, '').trim(),
-              type: sub.type || 'shortcut',
-              payload: sub.payload || sub.value || '',
-              bg_color: sub.bg_color || sub.bgColor || subStyle.bg || '#2E3440',
-              text_color: sub.text_color || sub.textColor || subStyle.textColor || '#FFFFFF',
-              icon_color: sub.customIconColor && sub.customIconColor !== 'same_as_text' && sub.customIconColor.startsWith('#') ? sub.customIconColor : (sub.text_color || sub.textColor || subStyle.textColor || '#FFFFFF'),
-              border_color: sub.border_color || sub.borderColor || subStyle.borderColor || '#34495e',
-              border_width: sub.border_width !== undefined ? sub.border_width : (sub.borderWidth !== undefined ? sub.borderWidth : 1),
-              border_radius: sub.border_radius !== undefined ? sub.border_radius : (sub.borderRadius !== undefined ? sub.borderRadius : 24),
-              icon: subIconVal
-            };
-          });
-        }
-
-        buttonList.push({
-          label: cleanLabel,
-          shortcut: cleanShortcut,
-          action,
-          type: btnType,
-          duration: btnDuration,
-          bg: style.bg,
-          bg2: style.bg2,
-          customAngle: item.customAngle !== undefined ? parseInt(item.customAngle, 10) : (item.customGradientDir === 'horizontal' ? 90 : 180),
-          textColor: style.textColor,
-          iconColor: style.iconColor,
-          borderColor: style.borderColor,
-          borderWidth: style.borderWidth,
-          borderStyle: item.borderStyle || (style.borderWidth > 0 ? 'solid' : 'none'),
-          borderDashGap: item.borderDashGap !== undefined ? parseInt(item.borderDashGap, 10) : 8,
-          borderDashLength: item.borderDashLength !== undefined ? parseInt(item.borderDashLength, 10) : 12,
-          borderBracketLength: item.borderBracketLength !== undefined ? parseInt(item.borderBracketLength, 10) : 35,
-          radius: style.radius,
-          fontSize: style.fontSize || 68,
-          icon: iconVal,
-          iconFit: item.iconFit || 'contain',
-          sub_buttons: subButtonsList
-        });
-      }
+      const { pageTitle, buttonList } = generatePageButtonList(config, p);
       hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, buttons: buttonList }) + '\n');
       await new Promise(r => setTimeout(r, 60));
     }
@@ -859,7 +885,9 @@ async function startHardwareDisplayBridge() {
             }
           }
           if (cfg) {
-            if (cfg.type === 'url' && cfg.value) {
+            if (cfg.type === 'toggle') {
+              await executeToggleAction(targetAction, cfg, config);
+            } else if (cfg.type === 'url' && cfg.value) {
               await shell.openExternal(cfg.value);
             } else if (cfg.type === 'text' && cfg.value) {
               await keyboard.type(cfg.value);
@@ -1030,8 +1058,9 @@ function mapKeyNameToCode(k) {
       if (norm.length === 1 && norm >= '0' && norm <= '9') {
         return Key[`Num${norm}`] || Key[norm];
       }
-      if (/^f\d{1,2}$/.test(norm)) {
-        return Key[norm.toUpperCase()];
+      if (/^(?:f|fn)(\d{1,2})$/.test(norm)) {
+        const num = norm.match(/^(?:f|fn)(\d{1,2})$/)[1];
+        return Key[`F${num}`] || null;
       }
       return null;
   }
@@ -1196,7 +1225,10 @@ ipcMain.on('trigger-macro', async (event, action) => {
     const cfg = config[action];
 
     if (cfg) {
-      if (cfg.type === 'url' && cfg.value) {
+      if (cfg.type === 'toggle') {
+        await executeToggleAction(action, cfg, config);
+        return;
+      } else if (cfg.type === 'url' && cfg.value) {
         await shell.openExternal(cfg.value);
       } else if (cfg.type === 'text' && cfg.value) {
         await keyboard.type(cfg.value);
@@ -1212,6 +1244,70 @@ ipcMain.on('trigger-macro', async (event, action) => {
   } catch (err) {
     console.error("Macro pipeline exception:", err);
   }
+});
+
+async function executeToggleAction(key, cfg, config) {
+  if (!cfg || cfg.type !== 'toggle') return false;
+  const curState = (cfg.toggleState === 1) ? 1 : 0;
+  const activeDef = (curState === 0) ? (cfg.stateA || {}) : (cfg.stateB || {});
+  const nextState = (curState === 0) ? 1 : 0;
+  const nextDef = (nextState === 0) ? (cfg.stateA || {}) : (cfg.stateB || {});
+
+  const actType = activeDef.actionType || activeDef.type || 'shortcut';
+  const actVal = activeDef.value || '';
+
+  if (actType === 'url' && actVal) await shell.openExternal(actVal);
+  else if (actType === 'text' && actVal) await keyboard.type(actVal);
+  else if (actType === 'shortcut' && actVal) await executeShortcutString(actVal);
+  else if (actType === 'macro' && actVal) await executeMacroSequence(actVal);
+
+  cfg.toggleState = nextState;
+  cfg.label = nextDef.label || cfg.label;
+  cfg.color = nextDef.color || cfg.color;
+  cfg.customColor1 = nextDef.color || cfg.color;
+  cfg.textColor = nextDef.textColor || cfg.textColor;
+  cfg.customTextColor = nextDef.textColor || cfg.textColor;
+  cfg.value = nextDef.value || cfg.value;
+
+  config[key] = cfg;
+  const formatted = saveConfigData(config);
+
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (w.webContents) {
+      w.webContents.send('button-toggled', { key, state: nextState, config: cfg });
+      w.webContents.send('config-updated', formatted);
+    }
+  });
+
+  const pageMatch = key.match(/^p(\d+)-b(\d+)/);
+  const pageNum = pageMatch ? parseInt(pageMatch[1], 10) : 1;
+  syncSinglePageToHardware(pageNum, formatted, true);
+  return true;
+}
+
+function saveConfigData(newConfig) {
+  const layout1Path = path.join(__dirname, 'Layout 1.json');
+  const targetFilePath = (newConfig && newConfig._activeFilePath) ? newConfig._activeFilePath : layout1Path;
+  if (newConfig) {
+    newConfig._activeFilePath = targetFilePath;
+    newConfig._layoutName = path.basename(targetFilePath);
+  }
+  const formatted = formatLayoutTemplate(newConfig);
+  fs.writeFileSync(configPath, JSON.stringify(formatted, null, 2));
+  try {
+    fs.writeFileSync(targetFilePath, JSON.stringify(formatted, null, 2));
+  } catch (e) {
+    console.error('Failed to write to active layout file:', e);
+  }
+  return formatted;
+}
+
+ipcMain.handle('toggle-button-state', async (event, key) => {
+  const config = loadConfig();
+  const cfg = config[key];
+  if (!cfg || cfg.type !== 'toggle') return null;
+  await executeToggleAction(key, cfg, config);
+  return { state: cfg.toggleState, config: cfg };
 });
 
 const configPath = path.join(app.getPath('userData'), 'macropad-config.json');
@@ -1579,19 +1675,7 @@ ipcMain.handle('import-theme-file', async (event) => {
 });
 
 ipcMain.handle('save-config', (event, newConfig) => {
-  const layout1Path = path.join(__dirname, 'Layout 1.json');
-  const targetFilePath = (newConfig && newConfig._activeFilePath) ? newConfig._activeFilePath : layout1Path;
-  if (newConfig) {
-    newConfig._activeFilePath = targetFilePath;
-    newConfig._layoutName = path.basename(targetFilePath);
-  }
-  const formatted = formatLayoutTemplate(newConfig);
-  fs.writeFileSync(configPath, JSON.stringify(formatted, null, 2));
-  try {
-    fs.writeFileSync(targetFilePath, JSON.stringify(formatted, null, 2));
-  } catch (e) {
-    console.error('Failed to write to active layout file:', e);
-  }
+  const formatted = saveConfigData(newConfig);
   BrowserWindow.getAllWindows().forEach(win => {
     if (win.webContents) win.webContents.send('config-updated', formatted);
   });
@@ -1638,6 +1722,10 @@ ipcMain.on('window-close', (event) => {
 ipcMain.handle('window-is-maximized', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
   return win ? win.isMaximized() : false;
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
 
 

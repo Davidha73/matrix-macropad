@@ -3,8 +3,9 @@
   "_screensaverTimeout": 0,
   "_screensaverAnim": "matrix_rain",
   "_screensaverImage": "icon.png",
-  "_brightness": 50,
+  "_brightness": 25,
   "_volume": 6,
+  "_bgColor": "#0f1115",
   "p1-name": "Editing Tools",
   "p2-name": "System Controls",
   "p3-name": "Custom Macros",
@@ -28,7 +29,8 @@
     "customColor1": "#2980b9",
     "customColor2": "#2573a7",
     "customAngle": 180,
-    "customTextColor": "#ffffff"
+    "customTextColor": "#ffffff",
+    "payload": "select-all"
   },
   "p1-b2": {
     "label": "Copy",
@@ -123,10 +125,12 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "materialIcon": "skip_previous",
-    "fontSize": 68
+    "payload": "media-prev",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p2-b2": {
-    "label": "Play/Pause",
+    "label": "Play / Pause",
     "type": "shortcut",
     "value": "media-play",
     "color": "#27ae60",
@@ -137,8 +141,27 @@
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 35,
-    "materialIcon": "play_arrow",
-    "fontSize": 68
+    "stateA": {
+      "label": "[volume_off] Muted",
+      "actionType": "shortcut",
+      "value": "vol-mute",
+      "color": "#8e44ad",
+      "textColor": "#ffffff"
+    },
+    "stateB": {
+      "label": "[volume_up] Unmuted",
+      "actionType": "shortcut",
+      "value": "vol-mute",
+      "color": "#2980b9",
+      "textColor": "#ffffff"
+    },
+    "toggleState": 0,
+    "textColor": "#ffffff",
+    "customTextColor": "#ffffff",
+    "payload": "media-play",
+    "borderRadius": 24,
+    "materialIcon": "play_pause",
+    "icon": "play_pause"
   },
   "p2-b3": {
     "label": "Next",
@@ -217,7 +240,9 @@
     "customColor1": "#E74C3C",
     "customColor2": "#F39C12",
     "customAngle": 90,
-    "customTextColor": "#ffffff"
+    "customTextColor": "#ffffff",
+    "payload": "Win+Left",
+    "borderRadius": 24
   },
   "p3-b2": {
     "label": "Full Screen",
@@ -236,7 +261,9 @@
     "customColor1": "#ff007f",
     "customColor2": "#9b00e8",
     "customAngle": 180,
-    "customTextColor": "#ffffff"
+    "customTextColor": "#ffffff",
+    "payload": "Win+Up",
+    "borderRadius": 24
   },
   "p3-b3": {
     "label": "Snap Window Right",
@@ -304,36 +331,42 @@
     "borderBracketLength": 35
   },
   "p4-b1": {
-    "label": "Button 1",
+    "label": "Stop npm",
     "color": "#4b5563",
-    "type": "text",
-    "value": "",
+    "type": "shortcut",
+    "value": "Ctrl+C",
     "iconFit": "contain",
     "borderStyle": "none",
     "borderWidth": 2,
     "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
-    "borderBracketLength": 35
+    "borderBracketLength": 35,
+    "payload": "Ctrl+C",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p4-b2": {
-    "label": "Button 2",
+    "label": "npm start",
     "color": "#4b5563",
-    "type": "text",
-    "value": "",
+    "type": "macro",
+    "value": "TYPE 'npm start'\nDELAY 400\nEnter",
     "iconFit": "contain",
     "borderStyle": "none",
     "borderWidth": 2,
     "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
-    "borderBracketLength": 35
+    "borderBracketLength": 35,
+    "payload": "TYPE 'npm start'\nDELAY 400\nEnter",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p4-b3": {
-    "label": "Google",
-    "color": "#2980b9",
-    "type": "url",
-    "value": "https://www.google.com",
+    "label": "",
+    "color": "#4b5563",
+    "type": "text",
+    "value": "",
     "iconFit": "cover",
     "borderStyle": "none",
     "borderWidth": 2,
@@ -341,7 +374,9 @@
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 35,
-    "icon": "google-logo.png"
+    "payload": "",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p4-b4": {
     "label": "Button 4",
@@ -369,5 +404,5 @@
     "borderBracketLength": 35
   },
   "_layoutName": "Layout 1.json",
-  "_activeFilePath": "/Volumes/T7/Projects/Matrix Macropad/Layout 1.json"
+  "_activeFilePath": "C:\\Users\\david\\Documents\\Projects\\matrix-macropad-git\\Layout 1.json"
 }

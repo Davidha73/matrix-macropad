@@ -14,14 +14,10 @@ This document collects architectural and feature enhancement ideas for both the 
   - Launching `VS Code` or `Terminal` auto-activates the "Developer Shortcuts" profile.
   - Launching `Spotify` auto-activates the "Media Player" profile.
 
-### 🔹 Multi-State Toggle Buttons
+### ~~🔹 Multi-State Toggle Buttons~~ _(✅ Completed)_
 
 - **Concept:** Buttons that toggle between two distinct visual and functional states on tap.
-- **Examples:**
-  - Microphone: `Muted (Red / Mic Off)` ⇄ `Active (Green / Mic On)`
-  - Media: `Play (Green / Play Arrow)` ⇄ `Pause (Orange / Pause)`
-  - Stream/OBS: `Start Recording` ⇄ `Stop Recording`
-  - Theme: Toggle Dark/Light mode on tap.
+- **Implemented:** Added `Multi-State Toggle` action type with dual-state (State A / State B) actions, custom colors, labels, quick presets (Mic, Media, OBS, Theme, Volume), real-time preview toggle flipping, and hardware serial trigger synchronization.
 
 ### 🔹 Live System Telemetry Widgets
 
@@ -66,7 +62,7 @@ This document collects architectural and feature enhancement ideas for both the 
 
 ## 2. Config (Settings Window)
 
-### 🔹 Drag-and-Drop Button Reordering
+### ~~🔹 Drag-and-Drop Button Reordering~~ _(✅ Completed)_
 
 - **Concept:** Drag preview button tiles directly in the 6-button preview grid to swap, move, or duplicate buttons across pages.
 

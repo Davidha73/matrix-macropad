@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('api', {
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
   isWindowMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  toggleButtonState: (key) => ipcRenderer.invoke('toggle-button-state', key),
+  onButtonToggled: (callback) => ipcRenderer.on('button-toggled', (event, data) => callback(data)),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   platform: process.platform
 });
 

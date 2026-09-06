@@ -58,6 +58,10 @@
     letter-spacing: 0.04em;
 }
 
+.header-app-version:empty {
+    display: none;
+}
+
 /* Custom Frameless Window Controls */
 .window-controls {
     display: flex;

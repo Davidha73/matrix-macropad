@@ -39,6 +39,31 @@ let selectedButtonIndex = 1;
 let currentProfileName = 'Default';
 let activeSubPageParent = null; // null for root page mode, or 'p1-b1' for sub-page mode
 let selectedSubButtonIndex = 1; // 1..6 when in sub-page mode
+let tabDragHoverTimer = null;
+let tabDragHoverTarget = null;
+
+function handleDropOnPageTab(targetPage, e) {
+    if (!window.activeDraggedButton) return;
+    const src = window.activeDraggedButton;
+    const targetKey = `p${targetPage}-b${src.index}`;
+    const isCopy = e && (e.altKey || e.ctrlKey);
+
+    const srcCfg = JSON.parse(JSON.stringify(getButtonConfigByKey(src.key) || { label: `Button ${src.index}` }));
+    const tgtCfg = JSON.parse(JSON.stringify(getButtonConfigByKey(targetKey) || { label: `Button ${src.index}` }));
+
+    if (isCopy) {
+        setButtonConfigByKey(targetKey, srcCfg);
+    } else {
+        setButtonConfigByKey(src.key, tgtCfg);
+        setButtonConfigByKey(targetKey, srcCfg);
+    }
+
+    selectedButtonIndex = src.index;
+    activeSubPageParent = null;
+    switchPage(targetPage, true);
+    selectButton(src.index, true);
+    markUnsaved();
+}
 
 function getActiveButtonKey() {
     if (activeSubPageParent) {
@@ -156,11 +181,13 @@ function removeSubPage(parentKey) {
     markUnsaved();
 }
 
-function selectSubButton(subNum) {
-    try {
-        saveCurrentFormInputs();
-    } catch (err) {
-        console.warn('Form save error during sub-button selection:', err);
+function selectSubButton(subNum, skipSave = false) {
+    if (!skipSave) {
+        try {
+            saveCurrentFormInputs();
+        } catch (err) {
+            console.warn('Form save error during sub-button selection:', err);
+        }
     }
     selectedSubButtonIndex = subNum;
     const newKey = getActiveButtonKey();
@@ -249,6 +276,59 @@ function renderPreviewTabs() {
         tab.style.flex = `0 0 ${tabWidth}px`;
         tab.style.visibility = (Math.abs(i - activePage) <= 1) ? 'visible' : 'hidden';
         tab.onclick = () => switchPage(i);
+
+        tab.ondragover = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!window.activeDraggedButton) return;
+            const isCopy = e.altKey || e.ctrlKey;
+            e.dataTransfer.dropEffect = isCopy ? 'copy' : 'move';
+            tab.classList.add('tab-drag-over');
+
+            if (i !== activePage) {
+                if (tabDragHoverTarget !== i) {
+                    if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                    tabDragHoverTarget = i;
+                    tabDragHoverTimer = setTimeout(() => {
+                        if (window.activeDraggedButton && tabDragHoverTarget === i) {
+                            switchPage(i, true);
+                        }
+                        tabDragHoverTimer = null;
+                        tabDragHoverTarget = null;
+                    }, 400);
+                }
+            } else {
+                if (tabDragHoverTimer) {
+                    clearTimeout(tabDragHoverTimer);
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }
+            }
+        };
+
+        tab.ondragleave = (e) => {
+            if (!tab.contains(e.relatedTarget)) {
+                tab.classList.remove('tab-drag-over');
+                if (tabDragHoverTarget === i) {
+                    if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }
+            }
+        };
+
+        tab.ondrop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            tab.classList.remove('tab-drag-over');
+            if (tabDragHoverTimer) {
+                clearTimeout(tabDragHoverTimer);
+                tabDragHoverTimer = null;
+                tabDragHoverTarget = null;
+            }
+            handleDropOnPageTab(i, e);
+        };
+
         container.appendChild(tab);
     }
 
@@ -260,10 +340,94 @@ function renderPreviewTabs() {
     if (prevBtn) {
         prevBtn.disabled = (activePage <= 1);
         prevBtn.style.visibility = (activePage <= 1) ? 'hidden' : 'visible';
+        prevBtn.ondragover = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!window.activeDraggedButton || activePage <= 1) return;
+            const isCopy = e.altKey || e.ctrlKey;
+            e.dataTransfer.dropEffect = isCopy ? 'copy' : 'move';
+            prevBtn.classList.add('arrow-drag-over');
+            if (tabDragHoverTarget !== 'prev') {
+                if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                tabDragHoverTarget = 'prev';
+                tabDragHoverTimer = setTimeout(() => {
+                    if (window.activeDraggedButton && activePage > 1) {
+                        prevPage();
+                    }
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }, 400);
+            }
+        };
+        prevBtn.ondragleave = (e) => {
+            if (!prevBtn.contains(e.relatedTarget)) {
+                prevBtn.classList.remove('arrow-drag-over');
+                if (tabDragHoverTarget === 'prev') {
+                    if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }
+            }
+        };
+        prevBtn.ondrop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            prevBtn.classList.remove('arrow-drag-over');
+            if (tabDragHoverTimer) {
+                clearTimeout(tabDragHoverTimer);
+                tabDragHoverTimer = null;
+                tabDragHoverTarget = null;
+            }
+            if (activePage > 1 && window.activeDraggedButton) {
+                handleDropOnPageTab(activePage - 1, e);
+            }
+        };
     }
     if (nextBtn) {
         nextBtn.disabled = (activePage >= totalPages);
         nextBtn.style.visibility = (activePage >= totalPages) ? 'hidden' : 'visible';
+        nextBtn.ondragover = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!window.activeDraggedButton || activePage >= totalPages) return;
+            const isCopy = e.altKey || e.ctrlKey;
+            e.dataTransfer.dropEffect = isCopy ? 'copy' : 'move';
+            nextBtn.classList.add('arrow-drag-over');
+            if (tabDragHoverTarget !== 'next') {
+                if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                tabDragHoverTarget = 'next';
+                tabDragHoverTimer = setTimeout(() => {
+                    if (window.activeDraggedButton && activePage < totalPages) {
+                        nextPage();
+                    }
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }, 400);
+            }
+        };
+        nextBtn.ondragleave = (e) => {
+            if (!nextBtn.contains(e.relatedTarget)) {
+                nextBtn.classList.remove('arrow-drag-over');
+                if (tabDragHoverTarget === 'next') {
+                    if (tabDragHoverTimer) clearTimeout(tabDragHoverTimer);
+                    tabDragHoverTimer = null;
+                    tabDragHoverTarget = null;
+                }
+            }
+        };
+        nextBtn.ondrop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            nextBtn.classList.remove('arrow-drag-over');
+            if (tabDragHoverTimer) {
+                clearTimeout(tabDragHoverTimer);
+                tabDragHoverTimer = null;
+                tabDragHoverTarget = null;
+            }
+            if (activePage < totalPages && window.activeDraggedButton) {
+                handleDropOnPageTab(activePage + 1, e);
+            }
+        };
     }
 
     const delBtn = document.getElementById('del-page-btn');
@@ -282,11 +446,13 @@ function updatePreviewTabTitles() {
     if (delBtn) delBtn.disabled = (totalPages <= 1);
 }
 
-function selectButton(buttonNum) {
-    try {
-        saveCurrentFormInputs();
-    } catch (err) {
-        console.warn('Form save error during button selection:', err);
+function selectButton(buttonNum, skipSave = false) {
+    if (!skipSave) {
+        try {
+            saveCurrentFormInputs();
+        } catch (err) {
+            console.warn('Form save error during button selection:', err);
+        }
     }
     activeSubPageParent = null;
     selectedButtonIndex = buttonNum;
@@ -304,11 +470,13 @@ function selectButton(buttonNum) {
     renderFormFields();
 }
 
-function switchPage(pageNum) {
-    try {
-        saveCurrentFormInputs();
-    } catch (err) {
-        console.warn('Form save error during page switch:', err);
+function switchPage(pageNum, skipSave = false) {
+    if (!skipSave) {
+        try {
+            saveCurrentFormInputs();
+        } catch (err) {
+            console.warn('Form save error during page switch:', err);
+        }
     }
     
     activeSubPageParent = null;
@@ -835,6 +1003,7 @@ function renderFormFields() {
                     <option value="text" ${cfg.type === 'text' ? 'selected' : ''}>Text Snippet</option>
                     <option value="shortcut" ${cfg.type === 'shortcut' ? 'selected' : ''}>System Shortcut</option>
                     <option value="macro" ${cfg.type === 'macro' ? 'selected' : ''}>Macro</option>
+                    <option value="toggle" ${cfg.type === 'toggle' ? 'selected' : ''}>🔀 Multi-State Toggle</option>
                     ${!isSub ? `<option value="subpage" ${(cfg.type === 'subpage' || cfg.type === 'folder') ? 'selected' : ''}>📁 Sub-Page</option>` : ''}
                     <option value="clock" ${cfg.type === 'clock' ? 'selected' : ''}>Live Clock</option>
                     <option value="date" ${cfg.type === 'date' ? 'selected' : ''}>Live Date</option>
@@ -885,6 +1054,8 @@ function renderFormFields() {
                         <button type="button" class="macro-help-btn" onclick="insertMacroStep('${key}', ${isHostMac ? "'Cmd+Space'" : "'Win+R'"})">+ ${isHostMac ? 'Cmd+Space' : 'Win+R'}</button>
                         <button type="button" class="macro-help-btn" onclick="insertMacroStep('${key}', ${isHostMac ? "'Cmd+C'" : "'Ctrl+C'"})">+ ${isHostMac ? 'Cmd+C' : 'Ctrl+C'}</button>
                         <button type="button" class="macro-help-btn" onclick="insertMacroStep('${key}', ${isHostMac ? "'Cmd+V'" : "'Ctrl+V'"})">+ ${isHostMac ? 'Cmd+V' : 'Ctrl+V'}</button>
+                        <button type="button" class="macro-help-btn" onclick="insertMacroStep('${key}', 'FnX')">+ FnX</button>
+                        <button type="button" class="macro-help-btn" onclick="insertMacroStep('${key}', ${isHostMac ? "'Cmd+FnX'" : "'Ctrl+FnX'"})">+ ${isHostMac ? 'Cmd+FnX' : 'Ctrl+FnX'}</button>
                     </div>
                 </div>
 
@@ -966,6 +1137,105 @@ function renderFormFields() {
                     <div class="input-clear-wrapper">
                         <input type="text" id="val-${key}" value="${cfg.value || ''}" placeholder="${cfg.type === 'text' ? 'Text snippet...' : 'https://...'}" oninput="saveCurrentFormInputs()">
                         <button type="button" class="input-clear-btn" title="Clear" onclick="clearInput('val-${key}', 'save')">✕</button>
+                    </div>
+                </div>
+
+                <div id="toggle-editor-container-${key}" class="toggle-container ${cfg.type === 'toggle' ? 'visible' : ''}">
+                    <div class="toggle-header-row">
+                        <div class="toggle-segmented-control">
+                            <button type="button" class="toggle-state-tab-btn ${currentToggleEditTab === 'A' ? 'active' : ''}" id="toggle-tab-a-${key}" onclick="switchToggleEditTab('${key}', 'A')">
+                                <span class="toggle-state-badge state-a">A</span> State A (Default)
+                            </button>
+                            <button type="button" class="toggle-state-tab-btn ${currentToggleEditTab === 'B' ? 'active' : ''}" id="toggle-tab-b-${key}" onclick="switchToggleEditTab('${key}', 'B')">
+                                <span class="toggle-state-badge state-b">B</span> State B (Active)
+                            </button>
+                        </div>
+                        <button type="button" class="toggle-test-btn" onclick="toggleButtonPreviewState('${key}')" title="Simulate tapping this toggle button">
+                            <span class="material-symbols-outlined">sync_alt</span>
+                            <span>Test Toggle (Now: ${(cfg.toggleState === 1) ? 'B' : 'A'})</span>
+                        </button>
+                    </div>
+
+                    <div class="field-col">
+                        <label>Quick Toggle Preset</label>
+                        <select id="toggle-preset-${key}" onchange="applyTogglePreset('${key}', this.value)">
+                            <option value="">Choose a Preset...</option>
+                            <option value="mic">🎙️ Microphone (Muted ⇄ Active)</option>
+                            <option value="media">⏯️ Media Player (Play ⇄ Pause)</option>
+                            <option value="obs">🔴 Stream/OBS (Rec Off ⇄ Recording)</option>
+                            <option value="theme">🌓 Dark / Light Theme</option>
+                            <option value="volume">🔊 Audio Volume (Muted ⇄ Unmuted)</option>
+                        </select>
+                    </div>
+
+                    <!-- State A Panel -->
+                    <div class="toggle-state-panel ${currentToggleEditTab === 'A' ? '' : 'hidden'}" id="toggle-panel-a-${key}">
+                        <div class="label-icon-row">
+                            <div>
+                                <label>State A Label</label>
+                                <input type="text" id="toggle-label-a-${key}" value="${(cfg.stateA ? cfg.stateA.label : cfg.label) || '[mic_off] Muted'}" placeholder="[mic_off] Muted" oninput="saveCurrentFormInputs()">
+                            </div>
+                            <div>
+                                <label>Button Color</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="toggle-color-a-${key}" value="${(cfg.stateA ? cfg.stateA.color : cfg.color) || '#e74c3c'}" oninput="saveCurrentFormInputs()">
+                                </div>
+                            </div>
+                            <div>
+                                <label>Text Color</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="toggle-textcolor-a-${key}" value="${(cfg.stateA ? cfg.stateA.textColor : cfg.textColor) || '#ffffff'}" oninput="saveCurrentFormInputs()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="field-col">
+                            <label>State A Action Type</label>
+                            <select id="toggle-action-type-a-${key}" onchange="onToggleActionTypeChange('${key}', 'A')">
+                                <option value="shortcut" ${((cfg.stateA ? cfg.stateA.actionType : 'shortcut') || 'shortcut') === 'shortcut' ? 'selected' : ''}>System Shortcut</option>
+                                <option value="macro" ${(cfg.stateA ? cfg.stateA.actionType : '') === 'macro' ? 'selected' : ''}>Macro Script</option>
+                                <option value="text" ${(cfg.stateA ? cfg.stateA.actionType : '') === 'text' ? 'selected' : ''}>Text Snippet</option>
+                                <option value="url" ${(cfg.stateA ? cfg.stateA.actionType : '') === 'url' ? 'selected' : ''}>Web URL</option>
+                            </select>
+                        </div>
+                        <div id="toggle-action-val-row-a-${key}">
+                            <label>State A Action Value / Shortcut</label>
+                            <input type="text" id="toggle-val-a-${key}" value="${(cfg.stateA ? cfg.stateA.value : cfg.value) || 'Ctrl+Shift+M'}" placeholder="Ctrl+Shift+M or text..." oninput="saveCurrentFormInputs()">
+                        </div>
+                    </div>
+
+                    <!-- State B Panel -->
+                    <div class="toggle-state-panel ${currentToggleEditTab === 'B' ? '' : 'hidden'}" id="toggle-panel-b-${key}">
+                        <div class="label-icon-row">
+                            <div>
+                                <label>State B Label</label>
+                                <input type="text" id="toggle-label-b-${key}" value="${(cfg.stateB ? cfg.stateB.label : '') || '[mic] Active'}" placeholder="[mic] Active" oninput="saveCurrentFormInputs()">
+                            </div>
+                            <div>
+                                <label>Button Color</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="toggle-color-b-${key}" value="${(cfg.stateB ? cfg.stateB.color : '') || '#27ae60'}" oninput="saveCurrentFormInputs()">
+                                </div>
+                            </div>
+                            <div>
+                                <label>Text Color</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="toggle-textcolor-b-${key}" value="${(cfg.stateB ? cfg.stateB.textColor : '') || '#ffffff'}" oninput="saveCurrentFormInputs()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="field-col">
+                            <label>State B Action Type</label>
+                            <select id="toggle-action-type-b-${key}" onchange="onToggleActionTypeChange('${key}', 'B')">
+                                <option value="shortcut" ${((cfg.stateB ? cfg.stateB.actionType : 'shortcut') || 'shortcut') === 'shortcut' ? 'selected' : ''}>System Shortcut</option>
+                                <option value="macro" ${(cfg.stateB ? cfg.stateB.actionType : '') === 'macro' ? 'selected' : ''}>Macro Script</option>
+                                <option value="text" ${(cfg.stateB ? cfg.stateB.actionType : '') === 'text' ? 'selected' : ''}>Text Snippet</option>
+                                <option value="url" ${(cfg.stateB ? cfg.stateB.actionType : '') === 'url' ? 'selected' : ''}>Web URL</option>
+                            </select>
+                        </div>
+                        <div id="toggle-action-val-row-b-${key}">
+                            <label>State B Action Value / Shortcut</label>
+                            <input type="text" id="toggle-val-b-${key}" value="${(cfg.stateB ? cfg.stateB.value : '') || 'Ctrl+Shift+M'}" placeholder="Ctrl+Shift+M or text..." oninput="saveCurrentFormInputs()">
+                        </div>
                     </div>
                 </div>
 
@@ -1469,13 +1739,33 @@ function onTypeChange(key) {
 
     if (typeEl) {
         const type = typeEl.value;
+        const toggleContainer = document.getElementById(`toggle-editor-container-${key}`);
         if (shortcutRow) shortcutRow.classList.toggle('visible', type === 'shortcut');
         if (macroContainer) macroContainer.classList.toggle('visible', type === 'macro');
+        if (toggleContainer) toggleContainer.classList.toggle('visible', type === 'toggle');
         if (widgetContainer) widgetContainer.classList.toggle('visible', type === 'clock' || type === 'date' || type === 'timer' || type === 'countdown');
         if (clockOptions) clockOptions.classList.toggle('hidden', type !== 'clock');
         if (dateOptions) dateOptions.classList.toggle('hidden', type !== 'date');
         if (timerOptions) timerOptions.classList.toggle('hidden', type !== 'timer' && type !== 'countdown');
         if (singleValContainer) singleValContainer.classList.toggle('visible', type === 'url' || type === 'text');
+
+        if (type === 'toggle') {
+            const target = getButtonConfigByKey(key);
+            if (!target.stateA) {
+                target.stateA = { label: target.label || '[mic_off] Muted', actionType: 'shortcut', value: target.value || 'Ctrl+Shift+M', color: target.color || '#e74c3c', textColor: target.textColor || '#ffffff' };
+            }
+            if (!target.stateB) {
+                target.stateB = { label: '[mic] Active', actionType: 'shortcut', value: target.value || 'Ctrl+Shift+M', color: '#27ae60', textColor: '#ffffff' };
+            }
+            if (target.toggleState === undefined) target.toggleState = 0;
+            const activeDef = target.toggleState === 1 ? target.stateB : target.stateA;
+            target.label = activeDef.label;
+            target.color = activeDef.color;
+            target.customColor1 = activeDef.color;
+            target.textColor = activeDef.textColor;
+            target.customTextColor = activeDef.textColor;
+            target.value = activeDef.value;
+        }
 
         if (type === 'subpage' || type === 'folder') {
             if (labelInput && (!labelInput.value || labelInput.value.startsWith('Button '))) labelInput.value = 'Sub-Page';
@@ -1551,6 +1841,116 @@ function onTimerModeChange(key) {
         customCol.classList.toggle('hidden', modeEl.value !== 'custom');
     }
     saveCurrentFormInputs();
+}
+
+let currentToggleEditTab = 'A';
+
+function switchToggleEditTab(key, tab) {
+    currentToggleEditTab = tab;
+    const tabA = document.getElementById(`toggle-tab-a-${key}`);
+    const tabB = document.getElementById(`toggle-tab-b-${key}`);
+    const panelA = document.getElementById(`toggle-panel-a-${key}`);
+    const panelB = document.getElementById(`toggle-panel-b-${key}`);
+    if (tabA) tabA.classList.toggle('active', tab === 'A');
+    if (tabB) tabB.classList.toggle('active', tab === 'B');
+    if (panelA) panelA.classList.toggle('hidden', tab !== 'A');
+    if (panelB) panelB.classList.toggle('hidden', tab !== 'B');
+}
+
+function onToggleActionTypeChange(key, stateLetter) {
+    saveCurrentFormInputs();
+    renderPreview();
+}
+
+function applyTogglePreset(key, preset) {
+    if (!preset) return;
+    const presets = {
+        mic: {
+            stateA: { label: '[mic_off] Muted', actionType: 'shortcut', value: 'Ctrl+Shift+M', color: '#e74c3c', textColor: '#ffffff' },
+            stateB: { label: '[mic] Active', actionType: 'shortcut', value: 'Ctrl+Shift+M', color: '#27ae60', textColor: '#ffffff' }
+        },
+        media: {
+            stateA: { label: '[play_arrow] Play', actionType: 'shortcut', value: 'media-play', color: '#27ae60', textColor: '#ffffff' },
+            stateB: { label: '[pause] Pause', actionType: 'shortcut', value: 'media-play', color: '#f39c12', textColor: '#ffffff' }
+        },
+        obs: {
+            stateA: { label: '[fiber_manual_record] Rec Off', actionType: 'shortcut', value: 'Ctrl+F9', color: '#4b5563', textColor: '#ffffff' },
+            stateB: { label: '[stop] Recording', actionType: 'shortcut', value: 'Ctrl+F9', color: '#c0392b', textColor: '#ffffff' }
+        },
+        theme: {
+            stateA: { label: '[dark_mode] Dark', actionType: 'shortcut', value: 'theme-toggle', color: '#1f2937', textColor: '#38bdf8' },
+            stateB: { label: '[light_mode] Light', actionType: 'shortcut', value: 'theme-toggle', color: '#f8fafc', textColor: '#0f172a' }
+        },
+        volume: {
+            stateA: { label: '[volume_off] Muted', actionType: 'shortcut', value: 'vol-mute', color: '#8e44ad', textColor: '#ffffff' },
+            stateB: { label: '[volume_up] Unmuted', actionType: 'shortcut', value: 'vol-mute', color: '#2980b9', textColor: '#ffffff' }
+        }
+    };
+    const p = presets[preset];
+    if (!p) return;
+    const cfg = getButtonConfigByKey(key);
+    cfg.stateA = JSON.parse(JSON.stringify(p.stateA));
+    cfg.stateB = JSON.parse(JSON.stringify(p.stateB));
+    const curState = (cfg.toggleState === 1) ? 1 : 0;
+    const active = curState === 1 ? cfg.stateB : cfg.stateA;
+    cfg.label = active.label;
+    cfg.color = active.color;
+    cfg.customColor1 = active.color;
+    cfg.textColor = active.textColor;
+    cfg.customTextColor = active.textColor;
+    cfg.value = active.value;
+    renderFormFields();
+    renderPreview();
+    markUnsaved();
+}
+
+async function toggleButtonPreviewState(key) {
+    const cfg = getButtonConfigByKey(key);
+    if (!cfg || cfg.type !== 'toggle') return;
+    
+    try { saveCurrentFormInputs(); } catch (_) {}
+    
+    if (!cfg.stateA) {
+        cfg.stateA = { label: cfg.label || '[mic_off] Muted', actionType: 'shortcut', value: cfg.value || 'Ctrl+Shift+M', color: cfg.color || '#e74c3c', textColor: '#ffffff' };
+    }
+    if (!cfg.stateB) {
+        cfg.stateB = { label: '[mic] Active', actionType: 'shortcut', value: cfg.value || 'Ctrl+Shift+M', color: '#27ae60', textColor: '#ffffff' };
+    }
+
+    const curState = (cfg.toggleState === 1) ? 1 : 0;
+    const nextState = (curState === 0) ? 1 : 0;
+    const nextDef = (nextState === 0) ? cfg.stateA : cfg.stateB;
+
+    cfg.toggleState = nextState;
+    cfg.label = nextDef.label || cfg.label;
+    cfg.color = nextDef.color || cfg.color;
+    cfg.customColor1 = nextDef.color || cfg.color;
+    cfg.textColor = nextDef.textColor || cfg.textColor;
+    cfg.customTextColor = nextDef.textColor || cfg.textColor;
+    cfg.value = nextDef.value || cfg.value;
+
+    if (window.api && window.api.toggleButtonState) {
+        try {
+            await window.api.toggleButtonState(key);
+        } catch (err) {
+            console.warn("Toggle IPC trigger error:", err);
+        }
+    }
+
+    renderPreview();
+    renderFormFields();
+    markUnsaved();
+}
+window.toggleButtonPreviewState = toggleButtonPreviewState;
+
+if (typeof window !== 'undefined' && window.api && window.api.onButtonToggled) {
+    window.api.onButtonToggled((data) => {
+        if (data && data.key && data.config) {
+            currentConfig[data.key] = data.config;
+            renderPreview();
+            renderFormFields();
+        }
+    });
 }
 
 function insertMacroStep(key, step) {
@@ -2285,6 +2685,48 @@ function saveCurrentFormInputs() {
             currentTarget.duration = validDur;
             timerDuration = validDur;
             finalVal = String(validDur);
+        } else if (type === 'toggle') {
+            const labelAEl = document.getElementById(`toggle-label-a-${key}`);
+            const typeAEl = document.getElementById(`toggle-action-type-a-${key}`);
+            const valAEl = document.getElementById(`toggle-val-a-${key}`);
+            const colorAEl = document.getElementById(`toggle-color-a-${key}`);
+            const textColorAEl = document.getElementById(`toggle-textcolor-a-${key}`);
+
+            const labelBEl = document.getElementById(`toggle-label-b-${key}`);
+            const typeBEl = document.getElementById(`toggle-action-type-b-${key}`);
+            const valBEl = document.getElementById(`toggle-val-b-${key}`);
+            const colorBEl = document.getElementById(`toggle-color-b-${key}`);
+            const textColorBEl = document.getElementById(`toggle-textcolor-b-${key}`);
+
+            const stateA = {
+                label: labelAEl ? labelAEl.value : (currentTarget.stateA ? currentTarget.stateA.label : '[mic_off] Muted'),
+                actionType: typeAEl ? typeAEl.value : (currentTarget.stateA ? currentTarget.stateA.actionType : 'shortcut'),
+                value: valAEl ? valAEl.value : (currentTarget.stateA ? currentTarget.stateA.value : 'Ctrl+Shift+M'),
+                color: colorAEl ? colorAEl.value : (currentTarget.stateA ? currentTarget.stateA.color : '#e74c3c'),
+                textColor: textColorAEl ? textColorAEl.value : (currentTarget.stateA ? currentTarget.stateA.textColor : '#ffffff')
+            };
+
+            const stateB = {
+                label: labelBEl ? labelBEl.value : (currentTarget.stateB ? currentTarget.stateB.label : '[mic] Active'),
+                actionType: typeBEl ? typeBEl.value : (currentTarget.stateB ? currentTarget.stateB.actionType : 'shortcut'),
+                value: valBEl ? valBEl.value : (currentTarget.stateB ? currentTarget.stateB.value : 'Ctrl+Shift+M'),
+                color: colorBEl ? colorBEl.value : (currentTarget.stateB ? currentTarget.stateB.color : '#27ae60'),
+                textColor: textColorBEl ? textColorBEl.value : (currentTarget.stateB ? currentTarget.stateB.textColor : '#ffffff')
+            };
+
+            currentTarget.stateA = stateA;
+            currentTarget.stateB = stateB;
+            if (currentTarget.toggleState === undefined) currentTarget.toggleState = 0;
+
+            const activeDef = currentTarget.toggleState === 1 ? stateB : stateA;
+            currentTarget.label = activeDef.label;
+            currentTarget.color = activeDef.color;
+            currentTarget.customColor1 = activeDef.color;
+            currentTarget.customColorType = 'solid';
+            currentTarget.textColor = activeDef.textColor;
+            currentTarget.customTextColor = activeDef.textColor;
+            finalVal = activeDef.value;
+            if (labelEl) labelEl.value = currentTarget.label;
         } else {
             finalVal = valEl ? valEl.value : '';
         }
@@ -2386,7 +2828,7 @@ function saveCurrentFormInputs() {
 
         const updatedConfig = {
             ...currentTarget,
-            label: labelEl.value,
+            label: (type === 'toggle' ? currentTarget.label : (labelEl ? labelEl.value : '')),
             type: type,
             value: finalVal,
             payload: finalVal,
@@ -2394,14 +2836,14 @@ function saveCurrentFormInputs() {
             timerMode: timerMode,
             timerDuration: timerDuration,
             duration: (type === 'timer' || type === 'countdown') ? timerDuration : undefined,
-            color: selectedColor,
+            color: (type === 'toggle' ? currentTarget.color : selectedColor),
             iconFit: iconFit,
             fontSize: fontSize,
-            customColorType: isCustomColor ? customColorType : undefined,
-            customColor1: isCustomColor ? customColor1 : undefined,
-            customColor2: isCustomColor ? customColor2 : undefined,
-            customAngle: isCustomColor ? customAngle : undefined,
-            customTextColor: customTextColor,
+            customColorType: (type === 'toggle' ? 'solid' : (isCustomColor ? customColorType : undefined)),
+            customColor1: (type === 'toggle' ? currentTarget.customColor1 : (isCustomColor ? customColor1 : undefined)),
+            customColor2: (type === 'toggle' ? undefined : (isCustomColor ? customColor2 : undefined)),
+            customAngle: (type === 'toggle' ? undefined : (isCustomColor ? customAngle : undefined)),
+            customTextColor: (type === 'toggle' ? currentTarget.customTextColor : customTextColor),
             customIconColor: customIconColor,
             borderStyle: borderStyle,
             borderWidth: borderWidth,
@@ -2868,7 +3310,31 @@ function toggleAppTheme() {
     setAppTheme(nextTheme);
 }
 
+async function initAppVersion() {
+    const versionEl = document.getElementById('header-app-version') || document.querySelector('.header-app-version');
+    if (!versionEl) return;
+    if (window.api && window.api.getAppVersion) {
+        try {
+            const version = await window.api.getAppVersion();
+            if (version) {
+                versionEl.textContent = `v${version}`;
+            }
+        } catch (e) {
+            console.error('Failed to load app version:', e);
+        }
+    }
+}
+
 init();
 initAppTheme();
+initAppVersion();
 setTimeout(updateMaximizeButtonIcon, 300);
+
+window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+        window.location.reload();
+    } else if (e.key === 'F5') {
+        window.location.reload();
+    }
+});
 

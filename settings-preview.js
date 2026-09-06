@@ -265,7 +265,7 @@ function renderPreviewButtonContent(btn, cfg, defaultIndex) {
         const iconSrc = (cfg.icon.startsWith('data:') || cfg.icon.startsWith('http://') || cfg.icon.startsWith('https://') || cfg.icon.startsWith('file://') || cfg.icon.startsWith('app-asset://'))
             ? cfg.icon
             : `app-asset://${cfg.icon.replace(/^assets\//, '')}`;
-        let content = `<img src="${iconSrc}" class="preview-icon ${fitClass}">`;
+        let content = `<img src="${iconSrc}" class="preview-icon ${fitClass}" draggable="false">`;
         if (cfg.label !== undefined && cfg.label !== null && cfg.label !== '') {
             content += `<span class="preview-btn-label">${formatButtonLabelHTML(cfg.label)}</span>`;
         }
@@ -336,10 +336,118 @@ function getContrastBorderColor(bgHex) {
     }
 }
 
+let isDraggingInProgress = false;
+
+function setupButtonDragAndDrop(btn, key, index, isSub) {
+    btn.setAttribute('draggable', 'true');
+
+    btn.addEventListener('dragstart', (e) => {
+        isDraggingInProgress = true;
+
+        window.activeDraggedButton = {
+            key: key,
+            index: index,
+            isSub: !!isSub,
+            parent: activeSubPageParent,
+            page: activePage,
+            element: btn
+        };
+
+        e.dataTransfer.effectAllowed = 'copyMove';
+        e.dataTransfer.setData('text/plain', key);
+
+        btn.classList.add('is-dragging');
+    });
+
+    btn.addEventListener('dragend', () => {
+        window.activeDraggedButton = null;
+        setTimeout(() => {
+            isDraggingInProgress = false;
+        }, 120);
+
+        const ghost = document.getElementById('drag-ghost-keeper');
+        if (ghost) ghost.innerHTML = '';
+
+        document.querySelectorAll('.preview-btn').forEach(b => {
+            b.classList.remove('is-dragging', 'drag-over', 'drag-copy');
+        });
+        document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('tab-drag-over'));
+        document.querySelectorAll('.preview-arrow-btn').forEach(a => a.classList.remove('arrow-drag-over'));
+    });
+
+    btn.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.activeDraggedButton || window.activeDraggedButton.key === key) return;
+
+        const isCopy = e.altKey || e.ctrlKey;
+        e.dataTransfer.dropEffect = isCopy ? 'copy' : 'move';
+
+        if (isCopy) {
+            btn.classList.remove('drag-over');
+            btn.classList.add('drag-copy');
+        } else {
+            btn.classList.remove('drag-copy');
+            btn.classList.add('drag-over');
+        }
+    });
+
+    btn.addEventListener('dragleave', (e) => {
+        if (!btn.contains(e.relatedTarget)) {
+            btn.classList.remove('drag-over', 'drag-copy');
+        }
+    });
+
+    btn.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.remove('drag-over', 'drag-copy');
+
+        if (!window.activeDraggedButton || window.activeDraggedButton.key === key) return;
+
+        const src = window.activeDraggedButton;
+        const targetKey = key;
+        const isCopy = e.altKey || e.ctrlKey;
+
+        const srcConfig = JSON.parse(JSON.stringify(getButtonConfigByKey(src.key) || { label: `Button ${src.index}` }));
+        const targetConfig = JSON.parse(JSON.stringify(getButtonConfigByKey(targetKey) || { label: `Button ${index}` }));
+
+        if (isCopy) {
+            setButtonConfigByKey(targetKey, srcConfig);
+        } else {
+            setButtonConfigByKey(src.key, targetConfig);
+            setButtonConfigByKey(targetKey, srcConfig);
+        }
+
+        if (isSub) {
+            selectSubButton(index, true);
+        } else {
+            selectButton(index, true);
+        }
+
+        renderPreview();
+        renderFormFields();
+        markUnsaved();
+    });
+}
+
 function renderPreview() {
     const grid = document.getElementById('preview-grid');
     if (!grid) return;
+
+    let ghostKeeper = document.getElementById('drag-ghost-keeper');
+    if (!ghostKeeper) {
+        ghostKeeper = document.createElement('div');
+        ghostKeeper.id = 'drag-ghost-keeper';
+        ghostKeeper.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0.001;pointer-events:none;overflow:hidden;';
+        document.body.appendChild(ghostKeeper);
+    }
+    if (window.activeDraggedButton && window.activeDraggedButton.element && grid.contains(window.activeDraggedButton.element)) {
+        ghostKeeper.appendChild(window.activeDraggedButton.element);
+    }
+
     grid.innerHTML = '';
+    grid.ondragover = (e) => e.preventDefault();
 
     const previewPanel = document.querySelector('.preview-panel');
     if (previewPanel) {
@@ -365,13 +473,47 @@ function renderPreview() {
             const rawColor = subCfg.color || 'c-gray';
             const isHex = (typeof rawColor === 'string' && rawColor.startsWith('#'));
             const isCustom = (rawColor === 'custom' || isHex || subCfg.customColorType || rawColor === 'transparent' || rawColor === 'c-transparent');
-            const btn = document.createElement('button');
+            const btn = document.createElement('div');
+            btn.setAttribute('role', 'button');
+            btn.setAttribute('tabindex', '0');
             btn.className = `preview-btn${isCustom ? ' custom' : ' ' + rawColor}${i === selectedSubButtonIndex ? ' selected' : ''}`;
             btn.id = `preview-btn-${subKey}`;
-            btn.onclick = () => selectSubButton(i);
+            btn.onclick = () => {
+                if (isDraggingInProgress) return;
+                if (subCfg.type === 'toggle') {
+                    if (typeof window.toggleButtonPreviewState === 'function') {
+                        window.toggleButtonPreviewState(subKey);
+                    }
+                }
+                selectSubButton(i);
+            };
+            btn.onkeydown = (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    btn.click();
+                }
+            };
 
             applyPreviewButtonStyles(btn, subCfg, activeTheme);
             renderPreviewButtonContent(btn, subCfg, i);
+            setupButtonDragAndDrop(btn, subKey, i, true);
+
+            if (subCfg.type === 'toggle') {
+                const tBadge = document.createElement('span');
+                const curState = (subCfg.toggleState === 1) ? 1 : 0;
+                tBadge.className = `preview-toggle-badge ${curState === 1 ? 'state-on' : 'state-off'}`;
+                tBadge.title = `Toggle: ${curState === 1 ? 'State B (Active)' : 'State A (Default)'} - Click to flip`;
+                tBadge.setAttribute('draggable', 'false');
+                tBadge.innerHTML = `<span class="material-symbols-outlined toggle-badge-icon">${curState === 1 ? 'toggle_on' : 'toggle_off'}</span>`;
+                tBadge.onclick = (e) => {
+                    e.stopPropagation();
+                    if (typeof window.toggleButtonPreviewState === 'function') {
+                        window.toggleButtonPreviewState(subKey);
+                    }
+                };
+                tBadge.ondragstart = (e) => { e.preventDefault(); e.stopPropagation(); };
+                btn.appendChild(tBadge);
+            }
 
             grid.appendChild(btn);
         }
@@ -385,26 +527,65 @@ function renderPreview() {
         const rawColor = cfg.color || 'c-gray';
         const isHex = (typeof rawColor === 'string' && rawColor.startsWith('#'));
         const isCustom = (rawColor === 'custom' || isHex || cfg.customColorType || rawColor === 'transparent' || rawColor === 'c-transparent');
-        const btn = document.createElement('button');
+        const btn = document.createElement('div');
+        btn.setAttribute('role', 'button');
+        btn.setAttribute('tabindex', '0');
         btn.className = `preview-btn${isCustom ? ' custom' : ' ' + rawColor}${i === selectedButtonIndex ? ' selected' : ''}`;
         btn.id = `preview-btn-${key}`;
-        btn.onclick = () => selectButton(i);
+        btn.onclick = () => {
+            if (isDraggingInProgress) return;
+            if (cfg.type === 'toggle') {
+                if (typeof window.toggleButtonPreviewState === 'function') {
+                    window.toggleButtonPreviewState(key);
+                }
+            }
+            selectButton(i);
+        };
+        btn.onkeydown = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                btn.click();
+            }
+        };
 
         applyPreviewButtonStyles(btn, cfg, activeTheme);
         renderPreviewButtonContent(btn, cfg, i);
+        setupButtonDragAndDrop(btn, key, i, false);
 
         const isSubPage = (cfg.type === 'subpage' || cfg.type === 'folder');
         if (isSubPage) {
             const badge = document.createElement('span');
             badge.className = 'preview-folder-badge';
             badge.title = `Edit Sub-Page (Click to open 6 buttons)`;
+            badge.setAttribute('draggable', 'false');
             badge.innerHTML = `<span class="material-symbols-outlined folder-icon-mini">folder_open</span>`;
             badge.onclick = (e) => {
                 e.stopPropagation();
                 selectButton(i);
                 enterSubPage(key);
             };
+            badge.ondragstart = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
             btn.appendChild(badge);
+        }
+
+        if (cfg.type === 'toggle') {
+            const tBadge = document.createElement('span');
+            const curState = (cfg.toggleState === 1) ? 1 : 0;
+            tBadge.className = `preview-toggle-badge ${curState === 1 ? 'state-on' : 'state-off'}`;
+            tBadge.title = `Toggle: ${curState === 1 ? 'State B (Active)' : 'State A (Default)'} - Click to flip`;
+            tBadge.setAttribute('draggable', 'false');
+            tBadge.innerHTML = `<span class="material-symbols-outlined toggle-badge-icon">${curState === 1 ? 'toggle_on' : 'toggle_off'}</span>`;
+            tBadge.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof window.toggleButtonPreviewState === 'function') {
+                    window.toggleButtonPreviewState(key);
+                }
+            };
+            tBadge.ondragstart = (e) => { e.preventDefault(); e.stopPropagation(); };
+            btn.appendChild(tBadge);
         }
 
         grid.appendChild(btn);

@@ -1,6 +1,6 @@
-## [2026-08-31 v2.92]
-- **Status:** Saved purple color `colorHex(0x9472f7)` directly to disk for `title_lbl` (line 1259) and `btn_back` pressed state in [firmware/MatrixMacropad_Freenove5inch.ino](file:///Volumes/T7/Projects/Matrix%20Macropad/firmware/MatrixMacropad_Freenove5inch.ino).
+## [2026-09-06 v1.1.2]
+- **Status:** Implemented silent single-page synchronization for multi-state toggle buttons. The desktop application sends targeted page updates with a silent flag on toggle transitions, and the firmware suppresses the "Syncing Layout..." popup when this flag is present.
 - **Files Changed:**
-  - [firmware/MatrixMacropad_Freenove5inch.ino](file:///Volumes/T7/Projects/Matrix%20Macropad/firmware/MatrixMacropad_Freenove5inch.ino)
-  - [memory.md](file:///Volumes/T7/Projects/Matrix%20Macropad/memory.md)
-- **Next Objectives:** Run `./flash.sh` to flash the updated purple sub-page header to the ESP32 hardware display.
+  - [main.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/main.js)
+  - [firmware/MatrixMacropad_Freenove5inch.ino](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/firmware/MatrixMacropad_Freenove5inch.ino)
+- **Next Objectives:** Re-flash the device via `npm run flash:win` to flash the updated firmware, restart the Electron app (`npm start`), and verify smooth, popup-free state toggling.

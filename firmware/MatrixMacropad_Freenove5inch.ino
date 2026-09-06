@@ -738,18 +738,25 @@ void initI2SAudio() {
 void playClickSound() {
   if (!i2s_audio_ready || audio_volume <= 0) return;
 
-  // 15ms crisp mechanical click waveform scaled by volume (44.1kHz stereo)
-  static int16_t click_buf[660];
+  // 1. Increased buffer size to 4,410 to allow a 50ms duration (2,205 stereo samples)
+  static int16_t click_buf[4410]; 
   static int last_vol = -1;
+
   if (last_vol != audio_volume) {
-    float peak = 7272.0f * (audio_volume / 100.0f);
-    for (int i = 0; i < 660; i += 2) {
-      int16_t amp = (int16_t)(peak * (1.0f - ((float)i / 660.0f)));
-      int16_t s = ((i / 2) % 40 < 20) ? amp : -amp;
+    // 2. Boosted peak slightly (7272.0f -> 15000.0f) because lower frequencies need more power to feel punchy
+    float peak = 15000.0f * (audio_volume / 100.0f); 
+    
+    for (int i = 0; i < 4410; i += 2) {
+      // 3. Updated the fade-out math to match the new 4,410 buffer limit
+      int16_t amp = (int16_t)(peak * (1.0f - ((float)i / 4410.0f)));
+      
+      // 4. Changed % 400 < 200 to drop the frequency to 110.25 Hz
+      int16_t s = ((i / 2) % 400 < 200) ? amp : -amp;
+      
       click_buf[i] = s;
       click_buf[i + 1] = s;
     }
-    last_vol = audio_volume;
+    last_vol = audio_volume; // Ensure last_vol updates so this only runs when volume changes
   }
 
   size_t written = 0;
@@ -2853,7 +2860,10 @@ void processJsonCommand(const char* jsonStr) {
       settimeofday(&tv, NULL);
     }
   } else if (strcmp(cmd, "sync_page") == 0) {
-    showSyncPopup("Syncing Layout...");
+    bool silent = doc["silent"] | false;
+    if (!silent) {
+      showSyncPopup("Syncing Layout...");
+    }
     int p = doc["page"] | 1;
     int tPages = doc["totalPages"] | 3;
     const char* pageTitle = doc["title"] | "";
