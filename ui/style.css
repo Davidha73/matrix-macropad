@@ -1,0 +1,442 @@
+* {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* --- Slim Custom Scrollbar --- */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+    background: #3498db;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #2980b9;
+}
+
+body {
+    margin: 0;
+    padding: 8px;
+    background-color: #0f1115;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: box-shadow 0.2s ease;
+}
+
+@keyframes screenEdgePulse {
+    0%, 100% { box-shadow: inset 0 0 0 0px transparent; }
+    50% { box-shadow: inset 0 0 20px 8px rgba(239, 68, 68, 0.9); }
+}
+
+body.edge-flash-alarm {
+    animation: screenEdgePulse 0.7s infinite ease-in-out;
+}
+
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 48;
+    vertical-align: middle;
+    font-size: inherit;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- Top Navigation Bar --- */
+.nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 125px;
+    padding-bottom: 8px;
+    width: 100%;
+    touch-action: pan-y;
+}
+.nav-arrow-btn {
+    width: 80px;
+    min-width: 80px;
+    height: 100%;
+    border: 2px solid var(--nav-border-color, #2c3e50);
+    border-radius: 10px;
+    background-color: transparent;
+    color: var(--nav-text-color, #8a99ad);
+    font-family: system-ui, sans-serif;
+    font-size: 44px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    z-index: 2;
+}
+.nav-arrow-btn:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+    border-color: transparent;
+    color: #374151;
+}
+.nav-arrow-btn:not(:disabled):active {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: var(--nav-active-text, #ffffff);
+}
+.nav-track-viewport {
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    box-sizing: border-box;
+}
+.nav-track {
+    display: flex;
+    gap: 16px;
+    height: 100%;
+    width: max-content;
+    transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: transform;
+}
+.nav-btn {
+    box-sizing: border-box;
+    height: 100%;
+    border: 2px solid var(--nav-border-color, #2c3e50);
+    border-radius: 10px;
+    background-color: transparent;
+    color: var(--nav-text-color, #8a99ad);
+    font-family: system-ui, sans-serif;
+    font-size: 44px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 12px;
+}
+.nav-btn.active {
+    background-color: transparent;
+    color: var(--nav-active-text, #ffffff);
+    border-color: var(--nav-active-border, #3498db);
+    box-shadow: 0 0 14px rgba(52, 152, 219, 0.6);
+    transform: scale(1.02);
+}
+
+/* --- 6-Button Macro Grid Container --- */
+.page-container {
+    flex: 1;
+    display: none;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 24px;
+    height: 100%;
+    width: auto;
+    box-sizing: border-box;
+    margin: 0 16px 16px 16px;
+}
+.page-container.active {
+    display: grid;
+}
+
+/* --- Macro Pad Buttons --- */
+.macro-btn {
+    border: var(--btn-border, none) !important;
+    border-radius: var(--btn-border-radius, 20px) !important;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: var(--btn-font-size, clamp(32px, 10vh, 72px));
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--btn-box-shadow, 0 4px 8px rgba(0, 0, 0, 0.4));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    padding: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.05s ease, filter 0.1s ease;
+}
+.macro-btn.custom,
+.macro-btn.c-custom {
+    background: var(--btn-custom-bg, #2980b9);
+}
+.macro-btn[style*="--btn-custom-color"] {
+    color: var(--btn-custom-color) !important;
+}
+.macro-btn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background-image: var(--btn-overlay-svg, var(--btn-dashed-svg, none));
+    background-size: 100% 100%;
+}
+.macro-icon {
+    pointer-events: none;
+    transition: all 0.15s ease;
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+}
+.macro-icon.fit-contain {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: inherit;
+}
+.macro-icon.fit-cover {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+}
+.macro-btn:has(.macro-icon) .macro-btn-label {
+    position: relative;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.macro-btn-label {
+    position: relative;
+    z-index: 1;
+    display: inline-block;
+    max-width: 95%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.macro-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.75);
+}
+
+
+@keyframes timer-alert-pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 12px rgba(231, 76, 60, 0.7), inset 0 0 10px rgba(231, 76, 60, 0.4);
+        filter: brightness(1);
+    }
+    50% {
+        transform: scale(1.03);
+        box-shadow: 0 0 28px rgba(231, 76, 60, 1), inset 0 0 20px rgba(231, 76, 60, 0.8);
+        filter: brightness(1.25);
+    }
+}
+
+.macro-btn.timer-alert {
+    animation: timer-alert-pulse 1s infinite ease-in-out;
+}
+
+/* --- Quick Modal Overlay (5" Touch Ergonomics) --- */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.95);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.modal-overlay.visible {
+    display: flex;
+}
+.modal-card {
+    background: #12161f;
+    border: none;
+    border-radius: 0;
+    padding: 20px 24px;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow-y: auto;
+}
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    justify-content: space-between;
+    gap: 16px;
+}
+.modal-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    flex: 1;
+}
+.preset-btn {
+    background: #252c3a;
+    border: 2px solid #3a4354;
+    border-radius: 10px;
+    color: #cbd5e1;
+    font-size: clamp(32px, 10vh, 72px);
+    font-weight: 700;
+    min-height: 95px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    transition: transform 0.05s ease, filter 0.1s ease;
+}
+.preset-btn.active {
+    background: #2980b9;
+    border-color: #3498db;
+    color: #ffffff;
+    box-shadow: 0 0 14px rgba(52, 152, 219, 0.7);
+}
+.preset-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.8);
+}
+.modal-preset-grid.hidden {
+    display: none;
+}
+.modal-custom-stepper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex: 1;
+    width: 100%;
+}
+.modal-custom-stepper.hidden {
+    display: none;
+}
+.custom-back-btn {
+    align-self: flex-start;
+    min-height: 140px;
+    padding: 0 48px;
+    font-size: clamp(36px, 8vh, 56px);
+}
+.stepper-display-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    width: 100%;
+}
+.stepper-display {
+    font-size: clamp(64px, 18vh, 140px);
+    font-weight: 700;
+    font-family: monospace;
+    color: #f1c40f;
+    letter-spacing: 4px;
+    text-align: center;
+}
+.stepper-reset-btn {
+    color: #fff;
+    background-color: transparent;
+    border: none;
+    font-size: 56px;
+    padding: 10px 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.05s ease, filter 0.1s ease;
+}
+.stepper-reset-btn:active {
+    transform: scale(0.92);
+    filter: brightness(0.8);
+}
+.stepper-controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    width: 100%;
+}
+.step-btn {
+    background: #252c3a;
+    border: 2px solid #3a4354;
+    border-radius: 10px;
+    color: #fff;
+    font-size: clamp(32px, 10vh, 72px);
+    font-weight: 700;
+    min-height: 190px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    transition: transform 0.05s ease, filter 0.1s ease;
+}
+.step-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.8);
+}
+.modal-actions-row {
+    display: flex;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 10px;
+}
+.modal-btn {
+    flex: 1;
+    min-height: 140px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: clamp(36px, 8vh, 56px);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.modal-btn:active {
+    transform: scale(0.97);
+}
+.btn-reset {
+    background: #4b5563;
+    color: #f3f4f6;
+}
+.btn-reset.hidden {
+    display: none;
+}
+.btn-save {
+    background: #27ae60;
+    color: #ffffff;
+}
+
+

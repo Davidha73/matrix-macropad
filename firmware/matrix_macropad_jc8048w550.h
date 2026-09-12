@@ -31,7 +31,9 @@ enum BorderType {
 enum WidgetType {
   WIDGET_BUTTON = 0,
   WIDGET_STOPWATCH,
-  WIDGET_COUNTDOWN
+  WIDGET_COUNTDOWN,
+  WIDGET_CLOCK,
+  WIDGET_DATE
 };
 
 #define MAX_SUB_BUTTONS 6
@@ -68,6 +70,7 @@ struct ButtonWidget {
   uint8_t dash_gap;
   uint8_t bracket_len;
   WidgetType widget_type;
+  char widget_format[16];
   bool timer_running;
   bool timer_alerting;
   uint32_t timer_seconds;
@@ -141,7 +144,8 @@ public:
         8 /* B0 */, 3 /* B1 */, 46 /* B2 */, 9 /* B3 */, 1 /* B4 */,
         0 /* hsync_polarity */, 4 /* hsync_front_porch */, 4 /* hsync_pulse_width */, 8 /* hsync_back_porch */,
         0 /* vsync_polarity */, 4 /* vsync_front_porch */, 4 /* vsync_pulse_width */, 8 /* vsync_back_porch */,
-        1 /* pclk_active_neg */, 13000000 /* prefer_speed (13MHz) */
+        1 /* pclk_active_neg */, 12000000 /* prefer_speed (12MHz) */, false /* useBigEndian */,
+        0 /* de_idle_high */, 0 /* pclk_idle_high */, (size_t)(JC_SCREEN_WIDTH * 10) /* bounce_buffer_size_px */
     );
 
     gfx = new Arduino_RGB_Display(JC_SCREEN_WIDTH, JC_SCREEN_HEIGHT, rgbpanel, JC_SCREEN_ROTATION, true);
@@ -190,9 +194,13 @@ public:
       storage = &LittleFS;
     }
 
-    // 6. Initialize Audio Pin (pulled LOW when idle)
-    pinMode(JC_AUDIO_PIN, OUTPUT);
-    digitalWrite(JC_AUDIO_PIN, LOW);
+    // 6. Initialize Audio Pins (held LOW to hold amplifier in low-power shutdown during boot)
+    pinMode(JC_I2S_BCLK, OUTPUT);
+    digitalWrite(JC_I2S_BCLK, LOW);
+    pinMode(JC_I2S_LRCLK, OUTPUT);
+    digitalWrite(JC_I2S_LRCLK, LOW);
+    pinMode(JC_I2S_DOUT, OUTPUT);
+    digitalWrite(JC_I2S_DOUT, LOW);
 
     return true;
   }

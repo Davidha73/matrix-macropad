@@ -1,0 +1,10 @@
+/* ========================================================
+   SETTINGS.CSS - Macropad Configuration UI Master Stylesheet
+   Modularized Architecture
+   ======================================================== */
+
+@import 'css/settings-tokens.css';
+@import 'css/settings-layout.css';
+@import 'css/settings-preview.css';
+@import 'css/settings-accordions.css';
+@import 'css/settings-modals.css';

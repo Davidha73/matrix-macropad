@@ -86,6 +86,8 @@ inline const char* getMaterialSymbolUtf8(const String& name) {
   if (name == "arrow_forward") return "\xee\x97\x88";
   if (name == "arrow_upward") return "\xee\x97\x98";
   if (name == "arrow_downward") return "\xee\x97\x9b";
+  if (name == "chevron_left") return "\xee\x97\x8b";
+  if (name == "chevron_right") return "\xee\x97\x8c";
   if (name == "folder") return "\xee\x8b\x87";
   if (name == "folder_open") return "\xee\x8b\x88";
   if (name == "settings") return "\xee\xa2\xb8";
@@ -144,8 +146,6 @@ inline const char* getMaterialSymbolUtf8(const String& name) {
   if (name == "arrow_right" || name == "east") return getMaterialSymbolUtf8("arrow_forward");
   if (name == "arrow_up" || name == "north") return getMaterialSymbolUtf8("arrow_upward");
   if (name == "arrow_down" || name == "south") return getMaterialSymbolUtf8("arrow_downward");
-  if (name == "chevron_left") return getMaterialSymbolUtf8("arrow_back");
-  if (name == "chevron_right") return getMaterialSymbolUtf8("arrow_forward");
   if (name == "x" || name == "cross") return getMaterialSymbolUtf8("close");
   if (name == "tick") return getMaterialSymbolUtf8("check");
   if (name == "plus") return getMaterialSymbolUtf8("add");

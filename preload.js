@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('api', {
   onHardwareStatus: (callback) => ipcRenderer.on('hardware-status', (event, s) => callback(s)),
   getHardwareStatus: () => ipcRenderer.invoke('get-hardware-status'),
   syncHardware: (config) => ipcRenderer.invoke('sync-hardware', config),
+  setHardwareSound: (soundSettings) => ipcRenderer.invoke('set-hardware-sound', soundSettings),
+  setHardwareBgColor: (color) => ipcRenderer.invoke('set-hardware-bg-color', color),
+  previewHardwareSound: (soundType, file) => ipcRenderer.invoke('preview-hardware-sound', soundType, file),
+  getHardwareSounds: () => ipcRenderer.invoke('get-hardware-sounds'),
+  onHardwareSoundsUpdated: (callback) => ipcRenderer.on('hardware-sounds-updated', (event, sounds) => callback(sounds)),
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
@@ -26,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   toggleButtonState: (key) => ipcRenderer.invoke('toggle-button-state', key),
   onButtonToggled: (callback) => ipcRenderer.on('button-toggled', (event, data) => callback(data)),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   platform: process.platform
 });
 

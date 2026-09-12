@@ -1,0 +1,11 @@
+src-tauri
+node_modules
+dist
+firmware
+libraries
+.git
+.agents
+.gemini
+*.node
+*.exe
+*.log

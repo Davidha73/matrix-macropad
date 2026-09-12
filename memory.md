@@ -1,5 +1,10 @@
-## [2026-09-06 v1.1.3]
-- **Status:** Added `memory.md`, `suggestions.md`, and macOS dot-underscore metadata files (`._*`) to `.gitignore` to prevent internal planning artifacts and temporary files from being tracked in git. Removed redundant `._memory.md` artifact.
+## [2026-09-12 v1.8.66]
+- **Status:** Resolved clock skipping/jumping issue by implementing native `WIDGET_CLOCK` and `WIDGET_DATE` handling in the firmware's local 250ms timer subsystem, eliminating the 1-second serial packet flood and reducing PC time synchronization to once every 60 seconds without RTC resets. Added a 1-second live preview ticker in the desktop app.
 - **Files Changed:**
-  - [.gitignore](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/.gitignore)
-- **Next Objectives:** Proceed with any remaining suggestions or feature enhancements as desired.
+  - [firmware/matrix_macropad_jc8048w550.h](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/firmware/matrix_macropad_jc8048w550.h)
+  - [firmware/MatrixMacropad_Freenove5inch.ino](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/firmware/MatrixMacropad_Freenove5inch.ino)
+  - [main.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/main.js)
+  - [settings-preview.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/settings-preview.js)
+  - [ui/settings-preview.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/ui/settings-preview.js)
+- **Next Objectives:**
+  - Verify smooth, 1-second incremental clock progression on hardware touchscreen and preview grid.

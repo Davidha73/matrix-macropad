@@ -1,10 +1,14 @@
 {
   "name": "matrix-macropad",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Matrix Macropad Desktop Bridge & Configurator",
   "main": "main.js",
   "scripts": {
     "start": "node run.js",
+    "tauri": "tauri",
+    "sync:ui": "node sync-ui.js",
+    "tauri:dev": "node run-tauri.js",
+    "tauri:build": "tauri build",
     "flash": "bash flash.sh",
     "flash:win": "flash.bat",
     "dist": "electron-builder --win",
@@ -85,6 +89,7 @@
     "serialport": "^13.0.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "png-to-ico": "^3.0.2"

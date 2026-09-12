@@ -692,8 +692,8 @@ function onScreenBgSelectChange() {
         if (picker) picker.value = val;
         if (hexInput) hexInput.value = val.toUpperCase();
         currentConfig._bgColor = val;
-        saveCurrentFormInputs();
         renderPreview();
+        markUnsaved();
     }
 }
 
@@ -723,8 +723,8 @@ function onCustomScreenBgInputChange(val) {
         }
     }
     currentConfig._bgColor = val;
-    saveCurrentFormInputs();
     renderPreview();
+    markUnsaved();
 }
 
 const themeColorDescriptors = {
@@ -879,6 +879,38 @@ function getIconColorSelectOptionsHTML(selectedColor) {
     }).join('');
     const customSel = (!found && selectedColor && selectedColor !== 'same_as_text') ? 'selected' : '';
     return `${sameOption}${options}<option value="custom" ${customSel}>🎨 Custom...</option>`;
+}
+
+const standardBorderColors = [
+    { value: '#ffffff', label: '⬜ Pure White' },
+    { value: '#000000', label: '⬛ Pure Black' },
+    { value: '#e2e8f0', label: '⬜ Platinum Gray' },
+    { value: '#94a3b8', label: '⬜ Slate Gray' },
+    { value: '#00f0ff', label: '🟦 Neon Cyan' },
+    { value: '#05ffa1', label: '🟩 Spring Green' },
+    { value: '#ffe600', label: '🟨 Bright Yellow' },
+    { value: '#f39c12', label: '🟧 Amber Orange' },
+    { value: '#ff007f', label: '🟪 Neon Pink' },
+    { value: '#ff003c', label: '🟥 Crimson Red' },
+    { value: '#38bdf8', label: '🟦 Sky Blue' },
+    { value: '#a855f7', label: '🟪 Vivid Purple' }
+];
+
+function isCustomBorderColor(color) {
+    if (!color) return false;
+    return !standardBorderColors.some(c => c.value.toLowerCase() === color.toLowerCase());
+}
+
+function getBorderColorSelectOptionsHTML(selectedColor) {
+    const curLower = (selectedColor || '#ffffff').toLowerCase();
+    let found = false;
+    const options = standardBorderColors.map(c => {
+        const isSel = (c.value.toLowerCase() === curLower);
+        if (isSel) found = true;
+        return `<option value="${c.value}" ${isSel ? 'selected' : ''}>${c.label}</option>`;
+    }).join('');
+    const customSel = (!found && selectedColor) ? 'selected' : '';
+    return `${options}<option value="custom" ${customSel}>🎨 Custom...</option>`;
 }
 
 const standardBgColors = [
@@ -1479,9 +1511,14 @@ function renderFormFields() {
                     </div>
                     <div class="field-col" id="border-color-col-${key}" style="${(!cfg.borderStyle || cfg.borderStyle === 'none') ? 'display: none;' : ''}">
                         <label>Border Color</label>
-                        <div class="color-input-group">
-                            <input type="color" class="color-picker-input" id="border-color-picker-${key}" value="${cfg.borderColor || '#ffffff'}" oninput="onBorderColorInputChange('${key}', this.value)">
-                            <input type="text" class="color-text-input" id="border-color-val-${key}" value="${cfg.borderColor || '#ffffff'}" oninput="onBorderColorInputChange('${key}', this.value)">
+                        <div class="color-picker-wrapper border-color-wrapper">
+                            <select id="border-color-select-${key}" onchange="onBorderColorSelectChange('${key}')">
+                                ${getBorderColorSelectOptionsHTML(cfg.borderColor || '#ffffff')}
+                            </select>
+                            <div class="custom-border-color-inline ${isCustomBorderColor(cfg.borderColor || '#ffffff') ? 'visible' : ''}" id="custom-border-color-row-${key}">
+                                <input type="color" class="color-picker-input" id="border-color-picker-${key}" value="${cfg.borderColor || '#ffffff'}" oninput="onBorderColorInputChange('${key}', this.value)" title="Choose custom border color">
+                                <input type="text" class="color-text-input border-color-hex-input" id="border-color-val-${key}" value="${cfg.borderColor || '#ffffff'}" oninput="onBorderColorInputChange('${key}', this.value)" placeholder="#HEX">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2468,12 +2505,59 @@ function onBorderRadiusChange(key) {
     saveCurrentFormInputs();
 }
 
+function onBorderColorSelectChange(key) {
+    const selectEl = document.getElementById(`border-color-select-${key}`);
+    const customRow = document.getElementById(`custom-border-color-row-${key}`);
+    const picker = document.getElementById(`border-color-picker-${key}`);
+    const hexInput = document.getElementById(`border-color-val-${key}`);
+    
+    if (!selectEl) return;
+    const val = selectEl.value;
+    
+    if (val === 'custom') {
+        if (customRow) customRow.classList.add('visible');
+        if (hexInput) {
+            hexInput.focus();
+            hexInput.select();
+        }
+    } else {
+        if (customRow) customRow.classList.remove('visible');
+        if (picker) picker.value = val;
+        if (hexInput) hexInput.value = val;
+        if (!currentConfig[key]) currentConfig[key] = {};
+        currentConfig[key].borderColor = val;
+        saveCurrentFormInputs();
+        renderPreview();
+    }
+}
+
 function onBorderColorInputChange(key, val) {
     const picker = document.getElementById(`border-color-picker-${key}`);
-    const text = document.getElementById(`border-color-val-${key}`);
+    const hexInput = document.getElementById(`border-color-val-${key}`);
+    const selectEl = document.getElementById(`border-color-select-${key}`);
+    const customRow = document.getElementById(`custom-border-color-row-${key}`);
+    
     if (picker && picker.value !== val) picker.value = val;
-    if (text && text.value !== val) text.value = val;
+    if (hexInput && hexInput.value !== val) hexInput.value = val;
+    
+    if (selectEl) {
+        const found = standardBorderColors.some(c => c.value.toLowerCase() === (val || '').toLowerCase());
+        selectEl.value = found ? val.toLowerCase() : 'custom';
+        if (customRow) {
+            customRow.classList.toggle('visible', !found);
+        }
+        const wrapper = selectEl.closest('.custom-select-wrapper');
+        if (wrapper) {
+            const triggerLabel = wrapper.querySelector('.custom-select-label');
+            if (triggerLabel && selectEl.options[selectEl.selectedIndex]) {
+                triggerLabel.textContent = selectEl.options[selectEl.selectedIndex].textContent;
+            }
+        }
+    }
+    if (!currentConfig[key]) currentConfig[key] = {};
+    currentConfig[key].borderColor = val;
     saveCurrentFormInputs();
+    renderPreview();
 }
 
 function extractCurrentSectionSettings(section) {
@@ -2739,8 +2823,6 @@ function saveCurrentFormInputs() {
         if (screensaverEl) currentConfig._screensaverTimeout = parseInt(screensaverEl.value, 10);
         const brightnessSlider = document.getElementById('brightness-slider');
         if (brightnessSlider) currentConfig._brightness = parseInt(brightnessSlider.value, 10);
-        const screenBgPicker = document.getElementById('screen-bg-picker');
-        if (screenBgPicker) currentConfig._bgColor = screenBgPicker.value;
 
         const fontSizeSelect = document.getElementById(`font-size-select-${key}`);
         let fontSize = currentTarget.fontSize;
@@ -2795,6 +2877,7 @@ function saveCurrentFormInputs() {
         const borderWidthEl = document.getElementById(`border-width-${key}`);
         const borderRadiusEl = document.getElementById(`border-radius-${key}`);
         const borderColorEl = document.getElementById(`border-color-val-${key}`);
+        const borderColorSelect = document.getElementById(`border-color-select-${key}`);
 
         const borderStyle = borderStyleEl ? borderStyleEl.value : (currentTarget.borderStyle || 'none');
         const borderWidth = borderWidthEl ? parseInt(borderWidthEl.value, 10) : (currentTarget.borderWidth || 2);
@@ -2802,7 +2885,16 @@ function saveCurrentFormInputs() {
         if (borderRadiusEl) {
             borderRadius = borderRadiusEl.value === 'default' ? undefined : parseInt(borderRadiusEl.value, 10);
         }
-        const borderColor = borderColorEl ? borderColorEl.value : (currentTarget.borderColor || '#ffffff');
+        let borderColor = currentTarget.borderColor || '#ffffff';
+        if (borderColorSelect) {
+            if (borderColorSelect.value === 'custom') {
+                borderColor = borderColorEl ? borderColorEl.value : (currentTarget.borderColor || '#ffffff');
+            } else {
+                borderColor = borderColorSelect.value;
+            }
+        } else if (borderColorEl) {
+            borderColor = borderColorEl.value;
+        }
         const borderDashGap = currentTarget.borderDashGap !== undefined ? currentTarget.borderDashGap : 8;
         const borderDashLength = currentTarget.borderDashLength !== undefined ? currentTarget.borderDashLength : 12;
         const borderBracketLength = currentTarget.borderBracketLength !== undefined ? currentTarget.borderBracketLength : 35;
@@ -3035,6 +3127,13 @@ function syncThemeUI() {
     if (volumeSlider) volumeSlider.value = volume;
     if (volumeVal) volumeVal.textContent = `${volume}%`;
 
+    const clickSelect = document.getElementById('sound-click-select');
+    if (clickSelect) clickSelect.value = currentConfig._soundClick || 'default';
+    const notifSelect = document.getElementById('sound-notif-select');
+    if (notifSelect) notifSelect.value = currentConfig._soundNotif || 'default';
+    const alarmSelect = document.getElementById('sound-alarm-select');
+    if (alarmSelect) alarmSelect.value = currentConfig._soundAlarm || 'default';
+
     const bgVal = currentConfig._bgColor || '#0f1115';
     const bgSelect = document.getElementById('screen-bg-select');
     const customBgRow = document.getElementById('custom-screen-bg-row');
@@ -3124,10 +3223,8 @@ function initCustomSelects(root = document) {
         // If already wrapped, just refresh trigger and options
         let wrapper = select.closest('.custom-select-wrapper');
         if (wrapper) {
-            const triggerLabel = wrapper.querySelector('.custom-select-label');
-            if (triggerLabel && select.options[select.selectedIndex]) {
-                triggerLabel.textContent = select.options[select.selectedIndex].textContent;
-            }
+            if (typeof wrapper._updateLabel === 'function') wrapper._updateLabel();
+            if (typeof wrapper._renderOptions === 'function') wrapper._renderOptions();
             return;
         }
 
@@ -3231,6 +3328,9 @@ function initCustomSelects(root = document) {
             renderOptions();
         });
 
+        wrapper._updateLabel = updateLabel;
+        wrapper._renderOptions = renderOptions;
+
         select.parentNode.insertBefore(wrapper, select);
         wrapper.appendChild(select);
         wrapper.appendChild(trigger);
@@ -3325,6 +3425,107 @@ async function initAppVersion() {
     }
 }
 
+let isCheckingUpdates = false;
+
+async function checkForUpdates() {
+    if (isCheckingUpdates) return;
+    const btn = document.getElementById('check-updates-btn');
+    if (btn) {
+        btn.classList.add('checking');
+        btn.title = 'Checking for updates...';
+    }
+    isCheckingUpdates = true;
+
+    try {
+        if (!window.api || !window.api.checkForUpdates) {
+            showUpdateToast('Update checker is not available in this environment.', 'info');
+            return;
+        }
+
+        const res = await window.api.checkForUpdates();
+        if (!res) {
+            showUpdateToast('Unable to check for updates.', 'error');
+            return;
+        }
+
+        if (res.status === 'update-available') {
+            if (btn) btn.classList.add('has-update');
+            const newVer = res.latestVersion ? `v${res.latestVersion}` : 'A new update';
+            const actionUrl = res.releaseUrl;
+            showUpdateToast(
+                `${newVer} is available!`,
+                'success',
+                actionUrl ? 'View' : null,
+                actionUrl ? () => window.open(actionUrl, '_blank') : null
+            );
+        } else if (res.status === 'up-to-date') {
+            const curVer = res.currentVersion ? ` (v${res.currentVersion})` : '';
+            showUpdateToast(`Matrix Macropad is up to date${curVer}`, 'info');
+        } else if (res.status === 'dev') {
+            showUpdateToast(`Development mode: running v${res.currentVersion || 'local'}`, 'info');
+        } else {
+            showUpdateToast(res.message || 'Failed to check for updates.', 'error');
+        }
+    } catch (err) {
+        console.error('Update check failed:', err);
+        showUpdateToast('Failed to check for updates.', 'error');
+    } finally {
+        isCheckingUpdates = false;
+        if (btn) {
+            btn.classList.remove('checking');
+            btn.title = 'Check for Updates';
+        }
+    }
+}
+
+function showUpdateToast(message, type = 'info', actionText = null, actionCallback = null) {
+    const existing = document.querySelector('.update-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `update-toast toast-${type}`;
+
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined toast-icon';
+    icon.textContent = type === 'success' ? 'check_circle' : (type === 'error' ? 'error' : 'info');
+    toast.appendChild(icon);
+
+    const msg = document.createElement('span');
+    msg.textContent = message;
+    toast.appendChild(msg);
+
+    if (actionText && actionCallback) {
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = 'update-toast-action';
+        actionBtn.textContent = actionText;
+        actionBtn.onclick = () => {
+            actionCallback();
+            toast.remove();
+        };
+        toast.appendChild(actionBtn);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'update-toast-close';
+    closeBtn.title = 'Dismiss';
+    const closeIcon = document.createElement('span');
+    closeIcon.className = 'material-symbols-outlined';
+    closeIcon.textContent = 'close';
+    closeBtn.appendChild(closeIcon);
+    closeBtn.onclick = () => toast.remove();
+    toast.appendChild(closeBtn);
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, actionText ? 8000 : 4000);
+}
+
 init();
 initAppTheme();
 initAppVersion();
@@ -3337,4 +3538,217 @@ window.addEventListener('keydown', (e) => {
         window.location.reload();
     }
 });
+
+// --- Sound Manager Modal & Audio Preview ---
+function formatSoundLabel(filename) {
+    if (!filename) return '';
+    let name = filename.replace(/\.wav$/i, '');
+    if (/^message/i.test(name)) {
+        name = name.replace(/^message/i, 'Notification ');
+    } else {
+        name = name.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+    }
+    return name.split(/[-_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function populateSoundSelect(selectEl, sounds, currentValue, defaultLabel, categoryRegex) {
+    if (!selectEl) return;
+    let val = currentValue || 'default';
+    selectEl.innerHTML = '';
+
+    const defOpt = document.createElement('option');
+    defOpt.value = 'default';
+    defOpt.textContent = defaultLabel || 'Default';
+    selectEl.appendChild(defOpt);
+
+    let matchingSounds = [];
+    if (Array.isArray(sounds) && sounds.length > 0) {
+        if (categoryRegex) {
+            matchingSounds = sounds.filter(f => categoryRegex.test(f));
+        }
+        if (matchingSounds.length === 0 && !categoryRegex) {
+            matchingSounds = sounds;
+        }
+    }
+
+    if (matchingSounds.length === 0) {
+        if (categoryRegex && categoryRegex.test('click')) {
+            matchingSounds = ['click1.wav', 'click2.wav', 'click3.wav', 'click4.wav'];
+        } else if (categoryRegex && (categoryRegex.test('message') || categoryRegex.test('notif'))) {
+            matchingSounds = ['message1.wav', 'message2.wav', 'message3.wav', 'message4.wav'];
+        } else if (categoryRegex && categoryRegex.test('alarm')) {
+            matchingSounds = ['alarm1.wav', 'alarm2.wav', 'alarm3.wav', 'alarm4.wav'];
+        }
+    }
+
+    // Natural ascending sort (1, 2, 3, 4...)
+    matchingSounds.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    matchingSounds.forEach(file => {
+        const opt = document.createElement('option');
+        opt.value = file;
+        opt.textContent = formatSoundLabel(file);
+        selectEl.appendChild(opt);
+    });
+
+    // If current value is not valid in matching sounds or on SD card, fall back to default
+    if (val !== 'default' && val !== 'mute') {
+        if (!matchingSounds.includes(val)) {
+            const isKnownHardwareSound = Array.isArray(sounds) && sounds.includes(val);
+            if (!isKnownHardwareSound) {
+                val = 'default';
+            } else {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = formatSoundLabel(val);
+                selectEl.appendChild(opt);
+            }
+        }
+    }
+
+    const muteOpt = document.createElement('option');
+    muteOpt.value = 'mute';
+    muteOpt.textContent = 'Mute (No Sound)';
+    selectEl.appendChild(muteOpt);
+
+    selectEl.value = val;
+
+    if (selectEl.id === 'sound-click-select') currentConfig._soundClick = val;
+    else if (selectEl.id === 'sound-notif-select') currentConfig._soundNotif = val;
+    else if (selectEl.id === 'sound-alarm-select') currentConfig._soundAlarm = val;
+
+    const wrapper = selectEl.closest('.custom-select-wrapper');
+    if (wrapper) {
+        if (typeof wrapper._updateLabel === 'function') wrapper._updateLabel();
+        if (typeof wrapper._renderOptions === 'function') wrapper._renderOptions();
+    }
+}
+
+if (window.api && window.api.onHardwareSoundsUpdated) {
+    window.api.onHardwareSoundsUpdated((sounds) => {
+        const clickSelect = document.getElementById('sound-click-select');
+        const notifSelect = document.getElementById('sound-notif-select');
+        const alarmSelect = document.getElementById('sound-alarm-select');
+        populateSoundSelect(clickSelect, sounds, currentConfig._soundClick, 'Default Click', /^click/i);
+        populateSoundSelect(notifSelect, sounds, currentConfig._soundNotif, 'Default Notification', /^(message|notif)/i);
+        populateSoundSelect(alarmSelect, sounds, currentConfig._soundAlarm, 'Default Alarm', /^(alarm|timer)/i);
+    });
+}
+
+async function openSoundManagerModal() {
+    const modal = document.getElementById('sound-manager-modal');
+    if (!modal) return;
+
+    const clickSelect = document.getElementById('sound-click-select');
+    const notifSelect = document.getElementById('sound-notif-select');
+    const alarmSelect = document.getElementById('sound-alarm-select');
+
+    if (window.api && window.api.getHardwareSounds) {
+        try {
+            const sounds = await window.api.getHardwareSounds();
+            populateSoundSelect(clickSelect, sounds, currentConfig._soundClick, 'Default Click', /^click/i);
+            populateSoundSelect(notifSelect, sounds, currentConfig._soundNotif, 'Default Notification', /^(message|notif)/i);
+            populateSoundSelect(alarmSelect, sounds, currentConfig._soundAlarm, 'Default Alarm', /^(alarm|timer)/i);
+        } catch (e) {
+            console.warn('Failed to load SD card sounds:', e);
+        }
+    }
+
+    if (clickSelect) clickSelect.value = currentConfig._soundClick || 'default';
+    if (notifSelect) notifSelect.value = currentConfig._soundNotif || 'default';
+    if (alarmSelect) alarmSelect.value = currentConfig._soundAlarm || 'default';
+
+    initCustomSelects(modal);
+    modal.classList.add('visible');
+}
+
+function closeSoundManagerModal() {
+    const modal = document.getElementById('sound-manager-modal');
+    if (modal) modal.classList.remove('visible');
+}
+
+function onSoundSelectChange(type, value) {
+    if (type === 'click') currentConfig._soundClick = value;
+    else if (type === 'notif') currentConfig._soundNotif = value;
+    else if (type === 'alarm') currentConfig._soundAlarm = value;
+    markUnsaved();
+
+    if (window.api && window.api.setHardwareSound) {
+        window.api.setHardwareSound({
+            click: currentConfig._soundClick || 'default',
+            notif: currentConfig._soundNotif || 'default',
+            alarm: currentConfig._soundAlarm || 'default'
+        });
+    }
+}
+
+async function previewSound(type) {
+    let selectedFile = null;
+    if (type === 'click') selectedFile = document.getElementById('sound-click-select')?.value || currentConfig._soundClick;
+    else if (type === 'notif') selectedFile = document.getElementById('sound-notif-select')?.value || currentConfig._soundNotif;
+    else if (type === 'alarm') selectedFile = document.getElementById('sound-alarm-select')?.value || currentConfig._soundAlarm;
+
+    if (window.api && window.api.previewHardwareSound) {
+        try {
+            const played = await window.api.previewHardwareSound(type, selectedFile);
+            if (played) return;
+        } catch (e) {
+            console.warn('Hardware preview not available:', e);
+        }
+    }
+
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        const masterGain = audioCtx.createGain();
+        const vol = (currentConfig._volume ?? 33) / 100;
+        masterGain.gain.setValueAtTime(Math.max(0.05, vol * 0.4), now);
+        masterGain.connect(audioCtx.destination);
+
+        if (type === 'click') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(180, now + 0.035);
+            gain.gain.setValueAtTime(1, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + 0.04);
+        } else if (type === 'notif') {
+            [1320, 1760].forEach((freq, idx) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const t = now + idx * 0.09;
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, t);
+                gain.gain.setValueAtTime(0.8, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(t);
+                osc.stop(t + 0.2);
+            });
+        } else if (type === 'alarm') {
+            [880, 1174, 1480].forEach((freq, idx) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const t = now + idx * 0.08;
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(freq, t);
+                gain.gain.setValueAtTime(0.4, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(t);
+                osc.stop(t + 0.16);
+            });
+        }
+    } catch (e) {
+        console.warn('Audio preview error:', e);
+    }
+}
+
 

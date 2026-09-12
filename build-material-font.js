@@ -7,7 +7,7 @@ const catalog = [
   'volume_up', 'volume_down', 'volume_mute', 'volume_off', 'mic', 'mic_off', 'headphones', 'hearing', 'speaker', 'surround_sound', 'spatial_audio', 'graphic_eq',
   'close', 'cancel', 'clear', 'highlight_off', 'check', 'done', 'check_circle', 'add', 'add_circle', 'remove', 'remove_circle',
   'content_cut', 'content_copy', 'content_paste', 'undo', 'redo', 'select_all', 'edit', 'delete', 'save', 'refresh', 'sync', 'find_in_page', 'text_fields', 'format_bold', 'format_italic', 'format_list_bulleted', 'format_quote',
-  'language', 'home', 'public', 'open_in_new', 'tab', 'tab_close', 'link', 'link_off', 'bookmark', 'search', 'explore', 'arrow_back', 'arrow_forward', 'arrow_upward', 'arrow_downward', 'folder', 'folder_open',
+  'language', 'home', 'public', 'open_in_new', 'tab', 'tab_close', 'link', 'link_off', 'bookmark', 'search', 'explore', 'arrow_back', 'arrow_forward', 'arrow_upward', 'arrow_downward', 'chevron_left', 'chevron_right', 'folder', 'folder_open',
   'settings', 'build', 'tune', 'terminal', 'code', 'lock', 'lock_open', 'power_settings_new', 'power_off', 'exit_to_app', 'logout', 'restart_alt', 'desktop_windows', 'laptop', 'smartphone', 'videocam', 'camera_alt', 'screenshot', 'bolt', 'rocket_launch',
   'timer', 'hourglass_top', 'hourglass_bottom', 'hourglass_empty', 'hourglass', 'schedule', 'calendar_month', 'calendar_today', 'notifications', 'notifications_active', 'sports_esports', 'shield', 'info', 'warning', 'help',
   'calculate', 'edit_note', 'palette', 'brush', 'monitoring', 'analytics', 'crop', 'description', 'apps', 'dashboard', 'widgets', 'mail', 'chat', 'storefront', 'travel_explore'
@@ -95,8 +95,6 @@ headerContent += `
   if (name == "arrow_right" || name == "east") return getMaterialSymbolUtf8("arrow_forward");
   if (name == "arrow_up" || name == "north") return getMaterialSymbolUtf8("arrow_upward");
   if (name == "arrow_down" || name == "south") return getMaterialSymbolUtf8("arrow_downward");
-  if (name == "chevron_left") return getMaterialSymbolUtf8("arrow_back");
-  if (name == "chevron_right") return getMaterialSymbolUtf8("arrow_forward");
   if (name == "x" || name == "cross") return getMaterialSymbolUtf8("close");
   if (name == "tick") return getMaterialSymbolUtf8("check");
   if (name == "plus") return getMaterialSymbolUtf8("add");

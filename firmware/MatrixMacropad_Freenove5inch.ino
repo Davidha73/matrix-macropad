@@ -10,12 +10,16 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-enum-enum-conversion"
 #include <lvgl.h>
+#pragma GCC diagnostic pop
 #include <driver/i2s.h>
 #include <time.h>
 #include <sys/time.h>
 #include "matrix_macropad_jc8048w550.h"
 #include "src/material_symbols_map.h"
+#include "matrix_ancs.h"
 
 // Hardware Abstraction Layer for JC8048W550 (RGB Panel, GT911 Touch, Backlight PWM, LittleFS)
 static JC8048W550_HAL hal;
@@ -23,7 +27,8 @@ static JC8048W550_HAL hal;
 // LVGL Full Frame Buffer in PSRAM (800x480)
 #define DISP_BUF_SIZE (JC_SCREEN_WIDTH * JC_SCREEN_HEIGHT)
 static lv_disp_draw_buf_t draw_buf;
-static lv_color_t *buf1;
+static lv_color_t *buf1 = NULL;
+static lv_color_t *buf2 = NULL;
 
 // Display Flush Callback
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
@@ -79,10 +84,60 @@ static lv_obj_t *edge_flash_overlay = NULL;
 static bool edge_flash_active = false;
 static bool edge_flash_state = false;
 static bool page_has_alarm[MAX_PAGES] = {false};
+static volatile bool is_alarm_audio_playing = false;
+static bool pending_alarm_sound = false;
+
+enum AudioCmdType {
+  AUDIO_CMD_NONE = 0,
+  AUDIO_CMD_CLICK,
+  AUDIO_CMD_CONFIRM,
+  AUDIO_CMD_NOTIF,
+  AUDIO_CMD_ALARM,
+  AUDIO_CMD_STOP
+};
+
+struct AudioCmd {
+  AudioCmdType type;
+  char soundName[64];
+  bool is_timer_alert;
+};
+
+static QueueHandle_t s_audio_cmd_queue = NULL;
+static volatile bool s_audio_playing = false;
+static volatile bool s_audio_abort = false;
+
+static inline bool isAnyTimerAlerting() {
+  for (int p = 0; p < total_pages; p++) {
+    for (int b = 0; b < BUTTONS_PER_PAGE; b++) {
+      if (grid_buttons[p][b].timer_alerting) return true;
+    }
+  }
+  return false;
+}
 
 static lv_obj_t *sync_popup = NULL;
 static lv_obj_t *sync_popup_lbl = NULL;
 static uint32_t sync_popup_hide_time = 0;
+
+#define MAX_ACTIVE_NOTIFS 8
+static AncsNotification s_active_notifs[MAX_ACTIVE_NOTIFS];
+static bool s_active_notif_expanded[MAX_ACTIVE_NOTIFS];
+static int s_active_notif_count = 0;
+
+static lv_obj_t *ancs_banner = NULL;
+static lv_obj_t *ancs_banner_icon = NULL;
+static lv_obj_t *ancs_banner_title = NULL;
+static lv_obj_t *ancs_banner_msg = NULL;
+static lv_obj_t *ancs_text_col = NULL;
+static bool s_ancs_banner_expanded = false;
+static uint32_t ancs_banner_show_ms = 0;
+
+static lv_obj_t *ancs_bar = NULL;
+static lv_obj_t *ancs_bar_line = NULL;
+
+static lv_obj_t *ancs_drawer = NULL;
+static lv_obj_t *ancs_drawer_list = NULL;
+static lv_obj_t *ancs_drawer_title = NULL;
 
 void showSyncPopup(const char* text = "Syncing Layout...") {
   if (sync_popup) {
@@ -90,7 +145,6 @@ void showSyncPopup(const char* text = "Syncing Layout...") {
     lv_obj_clear_flag(sync_popup, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(sync_popup);
     sync_popup_hide_time = millis() + 2000;
-    lv_refr_now(NULL);
   }
 }
 
@@ -98,8 +152,6 @@ void hideSyncPopup() {
   if (sync_popup) {
     lv_obj_add_flag(sync_popup, LV_OBJ_FLAG_HIDDEN);
     sync_popup_hide_time = 0;
-    lv_obj_invalidate(lv_scr_act());
-    lv_refr_now(NULL);
   }
 }
 
@@ -153,6 +205,7 @@ void openFolderModal(ButtonWidget *w);
 void closeFolderModal();
 void openTimerPresetModal(ButtonWidget *w);
 void closeTimerModals();
+void updateClockWidgetLabel(ButtonWidget &w);
 
 static void screensaver_touch_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
@@ -630,6 +683,28 @@ lv_color_t parseCssColor(String cName, String customHex = "") {
 
 
 // Switch Active Tab and Page View
+void setScreenBgColor(uint32_t bgHex) {
+  current_bg_color = bgHex;
+  lv_obj_t *scr = lv_scr_act();
+  if (scr) {
+    lv_obj_set_style_bg_color(scr, colorHex(bgHex), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_invalidate(scr);
+  }
+  switch_page(active_page);
+}
+
+void setScreenBgColorStr(const char* bgStr) {
+  if (!bgStr) return;
+  if (bgStr[0] == '#') {
+    uint32_t bgHex = (uint32_t)strtol(bgStr + 1, NULL, 16);
+    setScreenBgColor(bgHex);
+  } else if (strlen(bgStr) == 6) {
+    uint32_t bgHex = (uint32_t)strtol(bgStr, NULL, 16);
+    setScreenBgColor(bgHex);
+  }
+}
+
 void switch_page(int p) {
   if (p < 0 || p >= total_pages) return;
   active_page = p;
@@ -687,6 +762,13 @@ void switch_page(int p) {
     lv_obj_invalidate(btn_next);
   }
 
+  for (int b = 0; b < BUTTONS_PER_PAGE; b++) {
+    ButtonWidget &w = grid_buttons[active_page][b];
+    if (w.widget_type == WIDGET_CLOCK || w.widget_type == WIDGET_DATE) {
+      updateClockWidgetLabel(w);
+    }
+  }
+
   lv_refr_now(NULL);
 }
 
@@ -695,9 +777,376 @@ void switch_page(int p) {
 
 static bool i2s_audio_ready = false;
 static int audio_volume = 33;
+static String sound_click_file = "default";
+static String sound_notif_file = "default";
+static String sound_alarm_file = "default";
+
+static float getPerceptualVolumeGain() {
+  if (audio_volume <= 0) return 0.0f;
+  float norm = (float)audio_volume / 100.0f;
+  return powf(norm, 2.5f);
+}
+
+bool playWavAudio(const char* soundName, size_t maxBytes = 350000, bool is_timer_alert = false) {
+  if (!i2s_audio_ready || audio_volume <= 0 || !soundName || !hal.storage) return false;
+  if (strlen(soundName) == 0 || strcmp(soundName, "default") == 0 || strcmp(soundName, "mute") == 0) return false;
+
+  char fullPath[96];
+  if (soundName[0] == '/') {
+    snprintf(fullPath, sizeof(fullPath), "%s", soundName);
+  } else {
+    snprintf(fullPath, sizeof(fullPath), "/sounds/%s", soundName);
+  }
+
+  File f;
+  if (hal.storage->exists(fullPath)) {
+    f = hal.storage->open(fullPath, "r");
+  } else {
+    File dir = hal.storage->open("/sounds");
+    if (dir && dir.isDirectory()) {
+      File entry = dir.openNextFile();
+      while (entry) {
+        if (!entry.isDirectory()) {
+          String eName = entry.name();
+          int slashIdx = eName.lastIndexOf('/');
+          String base = (slashIdx >= 0) ? eName.substring(slashIdx + 1) : eName;
+          if (base.equalsIgnoreCase(soundName) || base.equalsIgnoreCase(String(soundName) + ".wav")) {
+            f = entry;
+            break;
+          }
+        } else {
+          File subEntry = entry.openNextFile();
+          while (subEntry) {
+            if (!subEntry.isDirectory()) {
+              String sName = subEntry.name();
+              int sIdx = sName.lastIndexOf('/');
+              String sBase = (sIdx >= 0) ? sName.substring(sIdx + 1) : sName;
+              if (sBase.equalsIgnoreCase(soundName) || sBase.equalsIgnoreCase(String(soundName) + ".wav")) {
+                f = subEntry;
+                break;
+              }
+            }
+            subEntry = entry.openNextFile();
+          }
+          if (f) break;
+        }
+        entry = dir.openNextFile();
+      }
+    }
+    if (!f) {
+      char rootPath[96];
+      snprintf(rootPath, sizeof(rootPath), "/%s", soundName);
+      if (hal.storage->exists(rootPath)) {
+        f = hal.storage->open(rootPath, "r");
+      } else {
+        File rootDir = hal.storage->open("/");
+        if (rootDir && rootDir.isDirectory()) {
+          File entry = rootDir.openNextFile();
+          while (entry) {
+            if (!entry.isDirectory()) {
+              String eName = entry.name();
+              int slashIdx = eName.lastIndexOf('/');
+              String base = (slashIdx >= 0) ? eName.substring(slashIdx + 1) : eName;
+              if (base.equalsIgnoreCase(soundName) || base.equalsIgnoreCase(String(soundName) + ".wav")) {
+                f = entry;
+                break;
+              }
+            }
+            entry = rootDir.openNextFile();
+          }
+        }
+      }
+    }
+  }
+
+  if (!f) {
+    Serial.printf("[WAV] File not found: %s\n", soundName);
+    return false;
+  }
+
+  uint8_t hdr[12];
+  if (f.read(hdr, 12) != 12 || memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
+    Serial.printf("[WAV] Invalid RIFF/WAVE header for %s\n", soundName);
+    f.close();
+    return false;
+  }
+
+  uint16_t audioFormat = 1;
+  uint16_t channels = 2;
+  uint32_t sampleRate = 44100;
+  uint16_t bitsPerSample = 16;
+  uint32_t dataSize = 0;
+  bool foundData = false;
+
+  while (f.available() >= 8) {
+    char chunkId[4];
+    uint32_t chunkSize = 0;
+    f.read((uint8_t*)chunkId, 4);
+    f.read((uint8_t*)&chunkSize, 4);
+
+    if (memcmp(chunkId, "fmt ", 4) == 0) {
+      f.read((uint8_t*)&audioFormat, 2);
+      f.read((uint8_t*)&channels, 2);
+      f.read((uint8_t*)&sampleRate, 4);
+      uint32_t byteRate = 0;
+      uint16_t blockAlign = 0;
+      f.read((uint8_t*)&byteRate, 4);
+      f.read((uint8_t*)&blockAlign, 2);
+      f.read((uint8_t*)&bitsPerSample, 2);
+      if (chunkSize > 16) {
+        f.seek(f.position() + (chunkSize - 16));
+      }
+    } else if (memcmp(chunkId, "data", 4) == 0) {
+      dataSize = chunkSize;
+      foundData = true;
+      break;
+    } else {
+      f.seek(f.position() + chunkSize);
+    }
+  }
+
+  if (!foundData || channels == 0 || (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32)) {
+    Serial.printf("[WAV] Unsupported audio spec: %s (fmt=%d, ch=%d, bits=%d, data=%d)\n",
+                  soundName, audioFormat, channels, bitsPerSample, dataSize);
+    f.close();
+    return false;
+  }
+
+  Serial.printf("[WAV] Playing %s: %uHz, %uch, %ubit, fmt=%u, size=%u\n",
+                soundName, (unsigned)sampleRate, (unsigned)channels, (unsigned)bitsPerSample, (unsigned)audioFormat, (unsigned)dataSize);
+
+  i2s_set_sample_rates(I2S_SPEAKER_PORT, sampleRate);
+
+  float vol = getPerceptualVolumeGain();
+  size_t bytesPerSample = bitsPerSample / 8;
+  size_t bytesPerFrame = channels * bytesPerSample;
+  size_t bytesRemaining = (dataSize > 0) ? dataSize : f.size();
+  if (bytesRemaining > maxBytes) bytesRemaining = maxBytes;
+
+  uint8_t inRaw[512];
+  int16_t outStereo[512]; // 256 stereo frames
+
+  while (bytesRemaining >= bytesPerFrame && f.available() >= (int)bytesPerFrame) {
+    if (s_audio_abort) break;
+    if (is_timer_alert && !isAnyTimerAlerting()) break;
+
+    size_t maxFrames = sizeof(outStereo) / (2 * sizeof(int16_t));
+    size_t framesToRead = bytesRemaining / bytesPerFrame;
+    if (framesToRead > maxFrames) framesToRead = maxFrames;
+    if (framesToRead * bytesPerFrame > sizeof(inRaw)) framesToRead = sizeof(inRaw) / bytesPerFrame;
+
+    size_t bytesRead = f.read(inRaw, framesToRead * bytesPerFrame);
+    if (bytesRead < bytesPerFrame) break;
+    size_t actualFrames = bytesRead / bytesPerFrame;
+    bytesRemaining -= actualFrames * bytesPerFrame;
+
+    size_t inIdx = 0;
+    size_t outIdx = 0;
+    for (size_t i = 0; i < actualFrames; i++) {
+      float leftSample = 0.0f;
+      float rightSample = 0.0f;
+
+      for (int ch = 0; ch < (int)channels; ch++) {
+        float sampleVal = 0.0f;
+        if (bitsPerSample == 16) {
+          int16_t raw16 = (int16_t)(inRaw[inIdx] | (inRaw[inIdx + 1] << 8));
+          sampleVal = (float)raw16;
+          inIdx += 2;
+        } else if (bitsPerSample == 24) {
+          int32_t raw24 = (int32_t)(inRaw[inIdx] | (inRaw[inIdx + 1] << 8) | (inRaw[inIdx + 2] << 16));
+          if (raw24 & 0x800000) raw24 |= 0xFF000000;
+          sampleVal = (float)(raw24 >> 8);
+          inIdx += 3;
+        } else if (bitsPerSample == 32) {
+          if (audioFormat == 3) {
+            float fraw = 0.0f;
+            memcpy(&fraw, &inRaw[inIdx], 4);
+            sampleVal = fraw * 32767.0f;
+          } else {
+            int32_t raw32 = 0;
+            memcpy(&raw32, &inRaw[inIdx], 4);
+            sampleVal = (float)(raw32 >> 16);
+          }
+          inIdx += 4;
+        } else if (bitsPerSample == 8) {
+          sampleVal = ((int)inRaw[inIdx] - 128) * 256.0f;
+          inIdx += 1;
+        }
+
+        if (ch == 0) leftSample = sampleVal;
+        else if (ch == 1) rightSample = sampleVal;
+      }
+
+      if (channels == 1) rightSample = leftSample;
+
+      int16_t lOut = (int16_t)constrain((int)(leftSample * vol), -32768, 32767);
+      int16_t rOut = (int16_t)constrain((int)(rightSample * vol), -32768, 32767);
+      outStereo[outIdx++] = lOut;
+      outStereo[outIdx++] = rOut;
+    }
+
+    size_t written = 0;
+    i2s_write(I2S_SPEAKER_PORT, (uint8_t*)outStereo, outIdx * sizeof(int16_t), &written, portMAX_DELAY);
+  }
+
+  f.close();
+  i2s_set_sample_rates(I2S_SPEAKER_PORT, 44100);
+  return true;
+}
+
+static void doPlayClickSound(const char* soundFile) {
+  if (!i2s_audio_ready || audio_volume <= 0) return;
+  if (soundFile && strcmp(soundFile, "mute") == 0) return;
+
+  if (soundFile && strcmp(soundFile, "default") != 0 && strlen(soundFile) > 0) {
+    if (playWavAudio(soundFile, 20000, false)) return;
+  }
+
+  static int16_t click_buf[4410];
+  static int last_vol = -1;
+  if (last_vol != audio_volume) {
+    float peak = 15000.0f * getPerceptualVolumeGain();
+    for (int i = 0; i < 4410; i += 2) {
+      int16_t amp = (int16_t)(peak * (1.0f - ((float)i / 4410.0f)));
+      int16_t s = ((i / 2) % 400 < 200) ? amp : -amp;
+      click_buf[i] = s;
+      click_buf[i + 1] = s;
+    }
+    last_vol = audio_volume;
+  }
+
+  size_t written = 0;
+  i2s_write(I2S_SPEAKER_PORT, click_buf, sizeof(click_buf), &written, portMAX_DELAY);
+}
+
+static void doPlayConfirmSound() {
+  if (!i2s_audio_ready || audio_volume <= 0) return;
+
+  static int16_t confirm_buf[2200];
+  float peak = 8000.0f * getPerceptualVolumeGain();
+  for (int i = 0; i < 2200; i += 2) {
+    int sample = i / 2;
+    int16_t amp = (int16_t)(peak * (1.0f - ((float)(sample % 1100) / 1100.0f)));
+    int period = (sample < 1100) ? 28 : 20;
+    int16_t s = ((sample % period) < (period / 2)) ? amp : -amp;
+    confirm_buf[i] = s;
+    confirm_buf[i + 1] = s;
+  }
+
+  size_t written = 0;
+  i2s_write(I2S_SPEAKER_PORT, confirm_buf, sizeof(confirm_buf), &written, portMAX_DELAY);
+}
+
+static void doPlayAlarmBeep(const char* soundFile, bool is_timer_alert) {
+  if (!i2s_audio_ready || audio_volume <= 0) return;
+  if (soundFile && strcmp(soundFile, "mute") == 0) return;
+
+  is_alarm_audio_playing = true;
+  if (soundFile && strcmp(soundFile, "default") != 0 && strlen(soundFile) > 0) {
+    playWavAudio(soundFile, 350000, is_timer_alert);
+    is_alarm_audio_playing = false;
+    return;
+  }
+
+  static int16_t alarm_buf[4410];
+  float peak = 9000.0f * getPerceptualVolumeGain();
+  for (int i = 0; i < 4410; i += 2) {
+    int sample = i / 2;
+    int burst = sample % 1470;
+    int16_t amp = (burst < 950) ? (int16_t)peak : 0;
+    int16_t s = ((sample % 24) < 12) ? amp : -amp;
+    alarm_buf[i] = s;
+    alarm_buf[i + 1] = s;
+  }
+
+  size_t written = 0;
+  i2s_write(I2S_SPEAKER_PORT, alarm_buf, sizeof(alarm_buf), &written, portMAX_DELAY);
+  is_alarm_audio_playing = false;
+}
+
+static void doPlayNotificationChime(const char* soundFile) {
+  if (!i2s_audio_ready || audio_volume <= 0) return;
+  if (soundFile && strcmp(soundFile, "mute") == 0) return;
+
+  if (soundFile && strcmp(soundFile, "default") != 0 && strlen(soundFile) > 0) {
+    if (playWavAudio(soundFile, 350000, false)) return;
+  }
+
+  static int16_t chime_buf[5292];
+  float peak = 6000.0f * getPerceptualVolumeGain();
+  for (int i = 0; i < 5292; i += 2) {
+    int sample = i / 2;
+    int16_t amp = (int16_t)(peak * (1.0f - ((float)sample / 2646.0f)));
+    int period = (sample < 1323) ? 24 : 18;
+    int16_t s = ((sample % period) < (period / 2)) ? amp : -amp;
+    chime_buf[i] = s;
+    chime_buf[i + 1] = s;
+  }
+  size_t written = 0;
+  i2s_write(I2S_SPEAKER_PORT, chime_buf, sizeof(chime_buf), &written, portMAX_DELAY);
+}
+
+static void audioTask(void *pvParameters) {
+  AudioCmd cmd;
+  while (true) {
+    if (xQueueReceive(s_audio_cmd_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+      s_audio_abort = false;
+      s_audio_playing = true;
+
+      if (cmd.type == AUDIO_CMD_CLICK) {
+        doPlayClickSound(cmd.soundName);
+      } else if (cmd.type == AUDIO_CMD_CONFIRM) {
+        doPlayConfirmSound();
+      } else if (cmd.type == AUDIO_CMD_NOTIF) {
+        doPlayNotificationChime(cmd.soundName);
+      } else if (cmd.type == AUDIO_CMD_ALARM) {
+        doPlayAlarmBeep(cmd.soundName, cmd.is_timer_alert);
+      }
+
+      s_audio_playing = false;
+    }
+  }
+}
+
+void triggerAudio(AudioCmdType type, const char* soundName = NULL, bool is_timer_alert = false) {
+  if (!i2s_audio_ready || audio_volume <= 0 || !s_audio_cmd_queue) return;
+
+  AudioCmd cmd;
+  cmd.type = type;
+  cmd.is_timer_alert = is_timer_alert;
+  if (soundName && strlen(soundName) > 0) {
+    strncpy(cmd.soundName, soundName, sizeof(cmd.soundName) - 1);
+    cmd.soundName[sizeof(cmd.soundName) - 1] = '\0';
+  } else {
+    cmd.soundName[0] = '\0';
+  }
+
+  xQueueSend(s_audio_cmd_queue, &cmd, 0);
+}
+
+void playClickSound() {
+  triggerAudio(AUDIO_CMD_CLICK, sound_click_file.c_str(), false);
+}
+
+void playConfirmSound() {
+  triggerAudio(AUDIO_CMD_CONFIRM, NULL, false);
+}
+
+void playAlarmBeep(const char* soundOverride = NULL, bool isAlert = false) {
+  const char* snd = (soundOverride && strlen(soundOverride) > 0) ? soundOverride : sound_alarm_file.c_str();
+  triggerAudio(AUDIO_CMD_ALARM, snd, isAlert);
+}
+
+void playNotificationChime(const char* soundOverride = NULL) {
+  const char* snd = (soundOverride && strlen(soundOverride) > 0) ? soundOverride : sound_notif_file.c_str();
+  triggerAudio(AUDIO_CMD_NOTIF, snd, false);
+}
 
 void initI2SAudio() {
-  // Pull audio data line low before driver initialization to eliminate floating voltage surge
+  pinMode(JC_I2S_BCLK, OUTPUT);
+  digitalWrite(JC_I2S_BCLK, LOW);
+  pinMode(JC_I2S_LRCLK, OUTPUT);
+  digitalWrite(JC_I2S_LRCLK, LOW);
   pinMode(JC_I2S_DOUT, OUTPUT);
   digitalWrite(JC_I2S_DOUT, LOW);
 
@@ -708,8 +1157,8 @@ void initI2SAudio() {
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 3,
-    .dma_buf_len = 256,
+    .dma_buf_count = 6,
+    .dma_buf_len = 512,
     .use_apll = false,
     .tx_desc_auto_clear = true
   };
@@ -722,83 +1171,453 @@ void initI2SAudio() {
   };
 
   if (i2s_driver_install(I2S_SPEAKER_PORT, &i2s_config, 0, NULL) == ESP_OK) {
-    i2s_set_pin(I2S_SPEAKER_PORT, &pin_config);
+    i2s_stop(I2S_SPEAKER_PORT);
     i2s_zero_dma_buffer(I2S_SPEAKER_PORT);
+    i2s_set_pin(I2S_SPEAKER_PORT, &pin_config);
+    i2s_start(I2S_SPEAKER_PORT);
 
-    // Write a muted zero-sample buffer to cleanly settle DAC output without audible pops
-    int16_t silence[256] = {0};
+    int16_t silence[512] = {0};
     size_t written = 0;
-    i2s_write(I2S_SPEAKER_PORT, silence, sizeof(silence), &written, 50);
+    for (int i = 0; i < 4; i++) {
+      i2s_write(I2S_SPEAKER_PORT, silence, sizeof(silence), &written, 50);
+    }
 
     i2s_audio_ready = true;
     Serial.println("[I2S] Audio Initialized (BCLK:0, LRC:18, DOUT:17)");
-  }
-}
 
-void playClickSound() {
-  if (!i2s_audio_ready || audio_volume <= 0) return;
-
-  // 1. Increased buffer size to 4,410 to allow a 50ms duration (2,205 stereo samples)
-  static int16_t click_buf[4410]; 
-  static int last_vol = -1;
-
-  if (last_vol != audio_volume) {
-    // 2. Boosted peak slightly (7272.0f -> 15000.0f) because lower frequencies need more power to feel punchy
-    float peak = 15000.0f * (audio_volume / 100.0f); 
-    
-    for (int i = 0; i < 4410; i += 2) {
-      // 3. Updated the fade-out math to match the new 4,410 buffer limit
-      int16_t amp = (int16_t)(peak * (1.0f - ((float)i / 4410.0f)));
-      
-      // 4. Changed % 400 < 200 to drop the frequency to 110.25 Hz
-      int16_t s = ((i / 2) % 400 < 200) ? amp : -amp;
-      
-      click_buf[i] = s;
-      click_buf[i + 1] = s;
+    if (!s_audio_cmd_queue) {
+      s_audio_cmd_queue = xQueueCreate(8, sizeof(AudioCmd));
+      xTaskCreatePinnedToCore(audioTask, "audioTask", 10240, NULL, 5, NULL, 0);
+      Serial.println("[I2S] Background audio task running on Core 0");
     }
-    last_vol = audio_volume; // Ensure last_vol updates so this only runs when volume changes
   }
-
-  size_t written = 0;
-  i2s_write(I2S_SPEAKER_PORT, click_buf, sizeof(click_buf), &written, 0);
 }
 
-void playConfirmSound() {
-  if (!i2s_audio_ready || audio_volume <= 0) return;
+static void renderAncsDrawer();
+static void updateAncsNotifBar();
 
-  // 50ms dual-chirp confirmation sound (ascending tones)
-  static int16_t confirm_buf[2200];
-  float peak = 8000.0f * (audio_volume / 100.0f);
-  for (int i = 0; i < 2200; i += 2) {
-    int sample = i / 2;
-    int16_t amp = (int16_t)(peak * (1.0f - ((float)(sample % 1100) / 1100.0f)));
-    int period = (sample < 1100) ? 28 : 20;
-    int16_t s = ((sample % period) < (period / 2)) ? amp : -amp;
-    confirm_buf[i] = s;
-    confirm_buf[i + 1] = s;
+static void ancs_card_tap_cb(lv_event_t *e) {
+  int idx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (idx >= 0 && idx < s_active_notif_count) {
+    playClickSound();
+    s_active_notif_expanded[idx] = !s_active_notif_expanded[idx];
+    renderAncsDrawer();
   }
-
-  size_t written = 0;
-  i2s_write(I2S_SPEAKER_PORT, confirm_buf, sizeof(confirm_buf), &written, 0);
 }
 
-void playAlarmBeep() {
-  if (!i2s_audio_ready || audio_volume <= 0) return;
+static void ancs_clear_all_cb(lv_event_t *e) {
+  playClickSound();
+  s_active_notif_count = 0;
+  for (int i = 0; i < MAX_ACTIVE_NOTIFS; i++) s_active_notif_expanded[i] = false;
+  if (ancs_banner) lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+  if (ancs_drawer) lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+  updateAncsNotifBar();
+  lv_obj_invalidate(lv_layer_top());
+}
 
-  // 3-pulse audible alarm burst pattern (~1.8kHz)
-  static int16_t alarm_buf[4410];
-  float peak = 9000.0f * (audio_volume / 100.0f);
-  for (int i = 0; i < 4410; i += 2) {
-    int sample = i / 2;
-    int burst = sample % 1470;
-    int16_t amp = (burst < 950) ? (int16_t)peak : 0;
-    int16_t s = ((sample % 24) < 12) ? amp : -amp;
-    alarm_buf[i] = s;
-    alarm_buf[i + 1] = s;
+static void ancs_drawer_close_cb(lv_event_t *e) {
+  playClickSound();
+  if (ancs_drawer) lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_invalidate(lv_layer_top());
+}
+
+static void ancs_item_dismiss_cb(lv_event_t *e) {
+  uint32_t uid = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+  playClickSound();
+  for (int i = 0; i < s_active_notif_count; i++) {
+    if (s_active_notifs[i].uid == uid) {
+      for (int j = i; j < s_active_notif_count - 1; j++) {
+        s_active_notifs[j] = s_active_notifs[j + 1];
+        s_active_notif_expanded[j] = s_active_notif_expanded[j + 1];
+      }
+      s_active_notif_count--;
+      break;
+    }
+  }
+  if (s_active_notif_count == 0) {
+    if (ancs_banner) lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+    if (ancs_drawer) lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    renderAncsDrawer();
+  }
+  updateAncsNotifBar();
+  lv_obj_invalidate(lv_layer_top());
+}
+
+static void updateAncsNotifBar() {
+  if (!ancs_bar) return;
+  if (s_active_notif_count <= 0) {
+    lv_obj_add_flag(ancs_bar, LV_OBJ_FLAG_HIDDEN);
+    if (ancs_drawer) lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_clear_flag(ancs_bar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(ancs_bar);
+  }
+}
+
+static AncsAppMeta resolveAncsMeta(const AncsNotification &notif) {
+  if (strstr(notif.app_id, "MobileSMS") || strstr(notif.app_id, "chat")) {
+    return {"Messages", "\xee\x83\x89", 0x38bdf8};
+  } else if (strstr(notif.app_id, "WhatsApp")) {
+    return {"WhatsApp", "\xee\x83\x89", 0x22c55e};
+  } else if (strstr(notif.app_id, "Gmail") || strstr(notif.app_id, "google.Gmail")) {
+    return {"Gmail", LV_SYMBOL_ENVELOPE, 0xef4444};
+  } else if (strstr(notif.app_id, "mobilemail") || strstr(notif.app_id, "Mail")) {
+    return {"Mail", LV_SYMBOL_ENVELOPE, 0x0284c7};
+  } else if (strstr(notif.app_id, "Slack")) {
+    return {"Slack", "\xee\x83\x89", 0xa855f7};
+  } else if (strstr(notif.app_id, "Telegraph") || strstr(notif.app_id, "Telegram")) {
+    return {"Telegram", "\xee\x83\x89", 0x0ea5e9};
+  } else if (strstr(notif.app_id, "mobilephone") || strstr(notif.app_id, "Phone")) {
+    return {"Phone", LV_SYMBOL_CALL, 0x22c55e};
+  } else if (strstr(notif.app_id, "mobilecal") || strstr(notif.app_id, "Calendar")) {
+    return {"Calendar", LV_SYMBOL_EDIT, 0xf59e0b};
+  } else if (strstr(notif.app_id, "reminders") || strstr(notif.app_id, "Reminders")) {
+    return {"Reminders", LV_SYMBOL_LIST, 0xf97316};
+  } else if (strstr(notif.app_id, "Spotify") || strstr(notif.app_id, "Music")) {
+    return {"Music", LV_SYMBOL_AUDIO, 0x10b981};
+  } else if (strstr(notif.app_id, "life360") || strstr(notif.app_id, "Life360")) {
+    return {"Life360", LV_SYMBOL_BELL, 0xa855f7};
   }
 
-  size_t written = 0;
-  i2s_write(I2S_SPEAKER_PORT, alarm_buf, sizeof(alarm_buf), &written, 0);
+  // System category fallbacks
+  if (notif.is_call || notif.category == ANCS_CAT_INCOMING_CALL) {
+    return {"Incoming Call", LV_SYMBOL_CALL, 0x22c55e};
+  } else if (notif.category == ANCS_CAT_MISSED_CALL) {
+    return {"Missed Call", LV_SYMBOL_CALL, 0xef4444};
+  } else if (notif.category == ANCS_CAT_VOICEMAIL) {
+    return {"Voicemail", LV_SYMBOL_AUDIO, 0x38bdf8};
+  } else if (notif.category == ANCS_CAT_SOCIAL) {
+    return {"Message", "\xee\x83\x89", 0x38bdf8};
+  } else if (notif.category == ANCS_CAT_EMAIL) {
+    return {"Email", LV_SYMBOL_ENVELOPE, 0x0ea5e9};
+  } else if (notif.category == ANCS_CAT_SCHEDULE) {
+    return {"Schedule", LV_SYMBOL_EDIT, 0xf59e0b};
+  } else if (notif.category == ANCS_CAT_NEWS) {
+    return {"News", LV_SYMBOL_FILE, 0xec4899};
+  } else if (notif.category == ANCS_CAT_HEALTH) {
+    return {"Health", LV_SYMBOL_PLUS, 0x10b981};
+  } else if (notif.category == ANCS_CAT_FINANCE) {
+    return {"Finance", LV_SYMBOL_CHARGE, 0x8b5cf6};
+  } else if (notif.category == ANCS_CAT_ENTERTAINMENT) {
+    return {"Media", LV_SYMBOL_AUDIO, 0xa855f7};
+  }
+
+  return {"Notification", LV_SYMBOL_BELL, 0x38bdf8};
+}
+
+static void renderAncsDrawer() {
+  if (!ancs_drawer || !ancs_drawer_list) return;
+  lv_obj_clean(ancs_drawer_list);
+
+  if (ancs_drawer_title) {
+    char titleBuf[32];
+    snprintf(titleBuf, sizeof(titleBuf), "Notifications (%d)", s_active_notif_count);
+    lv_label_set_text(ancs_drawer_title, titleBuf);
+  }
+
+  for (int i = 0; i < s_active_notif_count; i++) {
+    const AncsNotification &notif = s_active_notifs[i];
+    AncsAppMeta meta = resolveAncsMeta(notif);
+    bool expanded = s_active_notif_expanded[i];
+
+    lv_obj_t *card = lv_obj_create(ancs_drawer_list);
+    lv_obj_set_width(card, 576);
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_set_style_min_height(card, 56, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(card, colorHex(0x0f172a), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(card, colorHex(meta.accentColor), LV_PART_MAIN);
+    lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(card, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(card, 8, LV_PART_MAIN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_add_event_cb(card, ancs_card_tap_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+
+    lv_obj_t *ic = lv_label_create(card);
+    lv_label_set_text(ic, meta.iconSym);
+    if ((uint8_t)meta.iconSym[0] == 0xee) {
+      lv_obj_set_style_text_font(ic, &lv_font_material_symbols_20, LV_PART_MAIN);
+    } else {
+      lv_obj_set_style_text_font(ic, &lv_font_montserrat_20, LV_PART_MAIN);
+    }
+    lv_obj_set_style_text_color(ic, colorHex(meta.accentColor), LV_PART_MAIN);
+    lv_obj_set_style_pad_right(ic, 6, LV_PART_MAIN);
+    lv_obj_clear_flag(ic, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *col = lv_obj_create(card);
+    lv_obj_set_width(col, 480);
+    lv_obj_set_height(col, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(col, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(col, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    char cardTitle[96];
+    if (strlen(notif.title) > 0) {
+      snprintf(cardTitle, sizeof(cardTitle), "%s • %s", meta.appName, notif.title);
+    } else {
+      snprintf(cardTitle, sizeof(cardTitle), "%s", meta.appName);
+    }
+
+    lv_obj_t *tLbl = lv_label_create(col);
+    lv_label_set_text(tLbl, cardTitle);
+    lv_obj_set_style_text_font(tLbl, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(tLbl, colorHex(0xffffff), LV_PART_MAIN);
+    lv_label_set_long_mode(tLbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(tLbl, 470);
+    lv_obj_clear_flag(tLbl, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *mLbl = lv_label_create(col);
+    lv_obj_set_style_text_font(mLbl, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(mLbl, colorHex(0x94a3b8), LV_PART_MAIN);
+    lv_obj_set_width(mLbl, 470);
+    lv_obj_clear_flag(mLbl, LV_OBJ_FLAG_CLICKABLE);
+    if (expanded) {
+      lv_label_set_long_mode(mLbl, LV_LABEL_LONG_WRAP);
+      lv_obj_set_height(mLbl, LV_SIZE_CONTENT);
+    } else {
+      lv_label_set_long_mode(mLbl, LV_LABEL_LONG_DOT);
+      lv_obj_set_height(mLbl, 18);
+      lv_obj_set_style_max_height(mLbl, 18, LV_PART_MAIN);
+      lv_obj_set_style_clip_corner(mLbl, true, LV_PART_MAIN);
+    }
+    lv_label_set_text(mLbl, notif.message);
+
+    lv_obj_t *dBtn = lv_btn_create(card);
+    lv_obj_set_size(dBtn, 36, 36);
+    lv_obj_set_style_bg_opa(dBtn, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dBtn, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dBtn, 0, LV_PART_MAIN);
+    lv_obj_add_event_cb(dBtn, ancs_item_dismiss_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)notif.uid);
+
+    lv_obj_t *dSym = lv_label_create(dBtn);
+    lv_label_set_text(dSym, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(dSym, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(dSym, colorHex(0x64748b), LV_PART_MAIN);
+    lv_obj_center(dSym);
+  }
+}
+
+static void ancs_bar_event_cb(lv_event_t *e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if (!ancs_drawer) return;
+  bool should_open = false;
+  if (code == LV_EVENT_CLICKED) {
+    should_open = true;
+  } else if (code == LV_EVENT_GESTURE) {
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (dir == LV_DIR_BOTTOM) {
+      should_open = true;
+    }
+  }
+
+  if (should_open) {
+    playClickSound();
+    renderAncsDrawer();
+    lv_obj_clear_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(ancs_drawer);
+    if (ancs_banner) lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(lv_layer_top());
+  }
+}
+
+static void ancs_banner_close_cb(lv_event_t *e) {
+  playClickSound();
+  if (ancs_banner) {
+    lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+    s_ancs_banner_expanded = false;
+    lv_obj_set_size(ancs_banner, 540, 76);
+    if (ancs_text_col) {
+      lv_obj_set_height(ancs_text_col, 56);
+      lv_obj_scroll_to(ancs_text_col, 0, 0, LV_ANIM_OFF);
+    }
+    if (ancs_banner_title) {
+      lv_obj_clear_flag(ancs_banner_title, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_scroll_to(ancs_banner_title, 0, 0, LV_ANIM_OFF);
+    }
+    if (ancs_banner_msg) {
+      lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_DOT);
+      lv_obj_scroll_to(ancs_banner_msg, 0, 0, LV_ANIM_OFF);
+    }
+    lv_obj_scroll_to(ancs_banner, 0, 0, LV_ANIM_OFF);
+    lv_obj_invalidate(lv_layer_top());
+  }
+}
+
+static void ancs_banner_click_cb(lv_event_t *e) {
+  if (!ancs_banner) return;
+  playClickSound();
+  s_ancs_banner_expanded = !s_ancs_banner_expanded;
+  if (s_ancs_banner_expanded) {
+    lv_obj_set_width(ancs_banner, 540);
+    lv_obj_set_height(ancs_banner, LV_SIZE_CONTENT);
+    lv_obj_set_style_min_height(ancs_banner, 76, LV_PART_MAIN);
+    if (ancs_text_col) {
+      lv_obj_set_height(ancs_text_col, LV_SIZE_CONTENT);
+      lv_obj_set_style_min_height(ancs_text_col, 56, LV_PART_MAIN);
+    }
+    if (ancs_banner_msg) {
+      lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_WRAP);
+    }
+    ancs_banner_show_ms = millis();
+  } else {
+    lv_obj_set_size(ancs_banner, 540, 76);
+    if (ancs_text_col) {
+      lv_obj_set_height(ancs_text_col, 56);
+      lv_obj_scroll_to(ancs_text_col, 0, 0, LV_ANIM_OFF);
+    }
+    if (ancs_banner_title) {
+      lv_obj_clear_flag(ancs_banner_title, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_scroll_to(ancs_banner_title, 0, 0, LV_ANIM_OFF);
+    }
+    if (ancs_banner_msg) {
+      lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_DOT);
+      lv_obj_scroll_to(ancs_banner_msg, 0, 0, LV_ANIM_OFF);
+    }
+    lv_obj_scroll_to(ancs_banner, 0, 0, LV_ANIM_OFF);
+  }
+  lv_obj_invalidate(lv_layer_top());
+}
+
+static void handleAncsNotificationUi() {
+  AncsNotification notif;
+  if (matrix_ancs_pop_notification(&notif)) {
+    if (notif.is_removed) {
+      for (int i = 0; i < s_active_notif_count; i++) {
+        if (s_active_notifs[i].uid == notif.uid) {
+          for (int j = i; j < s_active_notif_count - 1; j++) {
+            s_active_notifs[j] = s_active_notifs[j + 1];
+            s_active_notif_expanded[j] = s_active_notif_expanded[j + 1];
+          }
+          s_active_notif_count--;
+          break;
+        }
+      }
+      if (s_active_notif_count == 0) {
+        if (ancs_banner) lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+        if (ancs_drawer) lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
+      } else if (ancs_drawer && !lv_obj_has_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN)) {
+        renderAncsDrawer();
+      }
+      updateAncsNotifBar();
+      lv_obj_invalidate(lv_layer_top());
+      return;
+    }
+
+    // Skip empty notifications (no title, no message, and not a call)
+    if (strlen(notif.title) == 0 && strlen(notif.message) == 0 && !notif.is_call) {
+      return;
+    }
+
+    // New or updated notification: check if UID exists
+    int existingIdx = -1;
+    for (int i = 0; i < s_active_notif_count; i++) {
+      if (s_active_notifs[i].uid == notif.uid) {
+        existingIdx = i;
+        break;
+      }
+    }
+    if (existingIdx >= 0) {
+      s_active_notifs[existingIdx] = notif;
+    } else {
+      if (s_active_notif_count < MAX_ACTIVE_NOTIFS) {
+        for (int i = s_active_notif_count; i > 0; i--) {
+          s_active_notifs[i] = s_active_notifs[i - 1];
+          s_active_notif_expanded[i] = s_active_notif_expanded[i - 1];
+        }
+        s_active_notifs[0] = notif;
+        s_active_notif_expanded[0] = false;
+        s_active_notif_count++;
+      } else {
+        for (int i = MAX_ACTIVE_NOTIFS - 1; i > 0; i--) {
+          s_active_notifs[i] = s_active_notifs[i - 1];
+          s_active_notif_expanded[i] = s_active_notif_expanded[i - 1];
+        }
+        s_active_notifs[0] = notif;
+        s_active_notif_expanded[0] = false;
+      }
+    }
+
+    // Render transient banner for immediate alert (only for new live non-silent notifications)
+    if (!notif.is_preexisting && !notif.is_silent && ancs_banner) {
+      AncsAppMeta meta = resolveAncsMeta(notif);
+      s_ancs_banner_expanded = false;
+      lv_obj_set_size(ancs_banner, 540, 76);
+      if (ancs_text_col) {
+        lv_obj_set_height(ancs_text_col, 56);
+        lv_obj_scroll_to(ancs_text_col, 0, 0, LV_ANIM_OFF);
+      }
+      if (ancs_banner_title) {
+        lv_obj_clear_flag(ancs_banner_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_scroll_to(ancs_banner_title, 0, 0, LV_ANIM_OFF);
+      }
+      if (ancs_banner_msg) {
+        lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_DOT);
+        lv_obj_scroll_to(ancs_banner_msg, 0, 0, LV_ANIM_OFF);
+      }
+      lv_obj_scroll_to(ancs_banner, 0, 0, LV_ANIM_OFF);
+
+      lv_label_set_text(ancs_banner_icon, meta.iconSym);
+      if ((uint8_t)meta.iconSym[0] == 0xee) {
+        lv_obj_set_style_text_font(ancs_banner_icon, &lv_font_material_symbols_28, LV_PART_MAIN);
+      } else {
+        lv_obj_set_style_text_font(ancs_banner_icon, &lv_font_montserrat_24, LV_PART_MAIN);
+      }
+      lv_obj_set_style_text_color(ancs_banner_icon, colorHex(meta.accentColor), LV_PART_MAIN);
+      lv_obj_set_style_border_color(ancs_banner, colorHex(meta.accentColor), LV_PART_MAIN);
+
+      char bannerTitle[96];
+      if (strlen(notif.title) > 0) {
+        snprintf(bannerTitle, sizeof(bannerTitle), "%s • %s", meta.appName, notif.title);
+      } else {
+        snprintf(bannerTitle, sizeof(bannerTitle), "%s", meta.appName);
+      }
+
+      lv_label_set_text(ancs_banner_title, bannerTitle);
+      lv_label_set_text(ancs_banner_msg, notif.message);
+
+      lv_obj_clear_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_move_foreground(ancs_banner);
+      lv_obj_invalidate(ancs_banner);
+      ancs_banner_show_ms = millis();
+      playNotificationChime();
+    }
+
+    updateAncsNotifBar();
+    if (ancs_drawer && !lv_obj_has_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN)) {
+      renderAncsDrawer();
+    }
+  }
+
+  if (ancs_banner && !lv_obj_has_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN)) {
+    uint32_t timeout = s_ancs_banner_expanded ? 15000 : 6000;
+    if (millis() - ancs_banner_show_ms >= timeout) {
+      lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+      s_ancs_banner_expanded = false;
+      lv_obj_set_size(ancs_banner, 540, 76);
+      if (ancs_text_col) {
+        lv_obj_set_height(ancs_text_col, 56);
+        lv_obj_scroll_to(ancs_text_col, 0, 0, LV_ANIM_OFF);
+      }
+      if (ancs_banner_title) {
+        lv_obj_clear_flag(ancs_banner_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_scroll_to(ancs_banner_title, 0, 0, LV_ANIM_OFF);
+      }
+      if (ancs_banner_msg) {
+        lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_DOT);
+        lv_obj_scroll_to(ancs_banner_msg, 0, 0, LV_ANIM_OFF);
+      }
+      lv_obj_scroll_to(ancs_banner, 0, 0, LV_ANIM_OFF);
+      lv_obj_invalidate(ancs_banner);
+    }
+  }
 }
 
 // Format seconds into MM:SS or HH:MM:SS string
@@ -823,10 +1642,56 @@ void updateTimerLabel(ButtonWidget &w) {
   lv_obj_invalidate(w.btn);
 }
 
+void updateClockWidgetLabel(ButtonWidget &w) {
+  time_t now = time(NULL);
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+
+  char buf[32] = {0};
+  if (w.widget_type == WIDGET_CLOCK) {
+    bool is24 = (strstr(w.widget_format, "24h") != NULL);
+    bool hasSec = (strstr(w.widget_format, "sec") != NULL);
+    if (is24) {
+      if (hasSec) {
+        strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+      } else {
+        strftime(buf, sizeof(buf), "%H:%M", &timeinfo);
+      }
+    } else {
+      if (hasSec) {
+        strftime(buf, sizeof(buf), "%I:%M:%S %p", &timeinfo);
+      } else {
+        strftime(buf, sizeof(buf), "%I:%M %p", &timeinfo);
+      }
+      if (buf[0] == '0') {
+        memmove(buf, buf + 1, strlen(buf));
+      }
+    }
+  } else if (w.widget_type == WIDGET_DATE) {
+    if (strcmp(w.widget_format, "short") == 0) {
+      strftime(buf, sizeof(buf), "%m/%d/%y", &timeinfo);
+    } else if (strcmp(w.widget_format, "iso") == 0) {
+      strftime(buf, sizeof(buf), "%Y-%m-%d", &timeinfo);
+    } else {
+      strftime(buf, sizeof(buf), "%a, %b %d", &timeinfo);
+    }
+  }
+
+  if (w.label && buf[0] != '\0') {
+    lv_label_set_text(w.label, buf);
+    lv_obj_clear_flag(w.label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_center(w.label);
+    lv_obj_invalidate(w.label);
+    lv_obj_invalidate(w.btn);
+  }
+}
+
 void resetTimerWidget(ButtonWidget &w) {
   w.timer_running = false;
   w.timer_alerting = false;
   w.alert_flash_state = false;
+  pending_alarm_sound = false;
+  s_audio_abort = true;
   if (w.widget_type == WIDGET_STOPWATCH) {
     w.timer_seconds = 0;
   } else if (w.widget_type == WIDGET_COUNTDOWN) {
@@ -842,6 +1707,16 @@ void resetTimerWidget(ButtonWidget &w) {
       lv_obj_clear_flag(w.icon, LV_OBJ_FLAG_HIDDEN);
     }
   }
+  if (w.border_style == BORDER_SOLID && w.border_width > 0) {
+    lv_obj_set_style_border_color(w.btn, w.border_color, LV_PART_MAIN);
+    lv_obj_set_style_border_width(w.btn, w.border_width, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(w.btn, LV_OPA_COVER, LV_PART_MAIN);
+  } else {
+    lv_obj_set_style_border_color(w.btn, colorHex(0x2c3e50), LV_PART_MAIN);
+    lv_obj_set_style_border_width(w.btn, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(w.btn, (w.border_style == BORDER_SOLID) ? LV_OPA_TRANSP : LV_OPA_COVER, LV_PART_MAIN);
+  }
+  lv_obj_invalidate(w.btn);
   updateTimerLabel(w);
 }
 
@@ -983,10 +1858,19 @@ void openTimerPresetModal(ButtonWidget *w) {
     lv_obj_add_event_cb(pbtn, preset_btn_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)presets[i].seconds);
   }
 
-  // Bottom action buttons: Custom... & Cancel
-  lv_obj_t *btn_custom = lv_btn_create(card);
+  // Bottom action buttons: Custom... & Cancel inside a flex row container
+  lv_obj_t *action_row = lv_obj_create(card);
+  lv_obj_set_size(action_row, 540, 56);
+  lv_obj_align(action_row, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_set_flex_flow(action_row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(action_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_opa(action_row, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(action_row, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(action_row, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(action_row, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *btn_custom = lv_btn_create(action_row);
   lv_obj_set_size(btn_custom, 255, 52);
-  lv_obj_align(btn_custom, LV_ALIGN_BOTTOM_LEFT, 15, -12);
   lv_obj_set_style_radius(btn_custom, 14, LV_PART_MAIN);
   lv_obj_set_style_bg_color(btn_custom, colorHex(0x2980b9), LV_PART_MAIN);
   lv_obj_t *lbl_custom = lv_label_create(btn_custom);
@@ -996,9 +1880,8 @@ void openTimerPresetModal(ButtonWidget *w) {
   lv_obj_center(lbl_custom);
   lv_obj_add_event_cb(btn_custom, open_custom_modal_cb, LV_EVENT_CLICKED, NULL);
 
-  lv_obj_t *btn_cancel = lv_btn_create(card);
+  lv_obj_t *btn_cancel = lv_btn_create(action_row);
   lv_obj_set_size(btn_cancel, 255, 52);
-  lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_RIGHT, -15, -12);
   lv_obj_set_style_radius(btn_cancel, 14, LV_PART_MAIN);
   lv_obj_set_style_bg_color(btn_cancel, colorHex(0x374151), LV_PART_MAIN);
   lv_obj_t *lbl_cancel = lv_label_create(btn_cancel);
@@ -1084,8 +1967,7 @@ void openCustomDurationModal() {
   lv_obj_align(custom_duration_display_lbl, LV_ALIGN_TOP_MID, 0, 42);
   update_custom_duration_display();
 
-  // Adjustment Row 1: Minutes
-  int16_t row1_y = 118;
+  // Adjustment Row 1: Minutes inside a flex row container
   struct AdjustBtn {
     const char *txt;
     int32_t delta;
@@ -1097,10 +1979,19 @@ void openCustomDurationModal() {
     {"+5m", 300}
   };
 
+  lv_obj_t *row_min = lv_obj_create(card);
+  lv_obj_set_size(row_min, 540, 56);
+  lv_obj_align(row_min, LV_ALIGN_TOP_MID, 0, 116);
+  lv_obj_set_flex_flow(row_min, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row_min, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_opa(row_min, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(row_min, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(row_min, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(row_min, LV_OBJ_FLAG_SCROLLABLE);
+
   for (int i = 0; i < 4; i++) {
-    lv_obj_t *b = lv_btn_create(card);
+    lv_obj_t *b = lv_btn_create(row_min);
     lv_obj_set_size(b, 125, 52);
-    lv_obj_set_pos(b, 15 + i * 135, row1_y);
     lv_obj_set_style_radius(b, 12, LV_PART_MAIN);
     lv_obj_set_style_bg_color(b, colorHex(0x232730), LV_PART_MAIN);
     lv_obj_set_style_border_color(b, colorHex(0x34495e), LV_PART_MAIN);
@@ -1115,8 +2006,7 @@ void openCustomDurationModal() {
     lv_obj_add_event_cb(b, custom_adjust_cb, LV_EVENT_CLICKED, (void*)(intptr_t)min_btns[i].delta);
   }
 
-  // Adjustment Row 2: Seconds
-  int16_t row2_y = 186;
+  // Adjustment Row 2: Seconds inside a flex row container
   const AdjustBtn sec_btns[4] = {
     {"-30s", -30},
     {"-10s", -10},
@@ -1124,10 +2014,19 @@ void openCustomDurationModal() {
     {"+30s", 30}
   };
 
+  lv_obj_t *row_sec = lv_obj_create(card);
+  lv_obj_set_size(row_sec, 540, 56);
+  lv_obj_align(row_sec, LV_ALIGN_TOP_MID, 0, 184);
+  lv_obj_set_flex_flow(row_sec, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row_sec, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_opa(row_sec, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(row_sec, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(row_sec, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(row_sec, LV_OBJ_FLAG_SCROLLABLE);
+
   for (int i = 0; i < 4; i++) {
-    lv_obj_t *b = lv_btn_create(card);
+    lv_obj_t *b = lv_btn_create(row_sec);
     lv_obj_set_size(b, 125, 52);
-    lv_obj_set_pos(b, 15 + i * 135, row2_y);
     lv_obj_set_style_radius(b, 12, LV_PART_MAIN);
     lv_obj_set_style_bg_color(b, colorHex(0x232730), LV_PART_MAIN);
     lv_obj_set_style_border_color(b, colorHex(0x34495e), LV_PART_MAIN);
@@ -1142,10 +2041,19 @@ void openCustomDurationModal() {
     lv_obj_add_event_cb(b, custom_adjust_cb, LV_EVENT_CLICKED, (void*)(intptr_t)sec_btns[i].delta);
   }
 
-  // Bottom action buttons: Save / Set & Back / Cancel
-  lv_obj_t *btn_set = lv_btn_create(card);
+  // Bottom action buttons: Save / Set & Back / Cancel inside a flex row container
+  lv_obj_t *action_row = lv_obj_create(card);
+  lv_obj_set_size(action_row, 540, 56);
+  lv_obj_align(action_row, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_set_flex_flow(action_row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(action_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_opa(action_row, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(action_row, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(action_row, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(action_row, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *btn_set = lv_btn_create(action_row);
   lv_obj_set_size(btn_set, 255, 56);
-  lv_obj_align(btn_set, LV_ALIGN_BOTTOM_LEFT, 15, -12);
   lv_obj_set_style_radius(btn_set, 14, LV_PART_MAIN);
   lv_obj_set_style_bg_color(btn_set, colorHex(0x27ae60), LV_PART_MAIN);
   lv_obj_t *lbl_set = lv_label_create(btn_set);
@@ -1155,9 +2063,8 @@ void openCustomDurationModal() {
   lv_obj_center(lbl_set);
   lv_obj_add_event_cb(btn_set, custom_save_cb, LV_EVENT_CLICKED, NULL);
 
-  lv_obj_t *btn_cancel = lv_btn_create(card);
+  lv_obj_t *btn_cancel = lv_btn_create(action_row);
   lv_obj_set_size(btn_cancel, 255, 56);
-  lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_RIGHT, -15, -12);
   lv_obj_set_style_radius(btn_cancel, 14, LV_PART_MAIN);
   lv_obj_set_style_bg_color(btn_cancel, colorHex(0x374151), LV_PART_MAIN);
   lv_obj_t *lbl_cancel = lv_label_create(btn_cancel);
@@ -1290,8 +2197,8 @@ void openFolderModal(ButtonWidget *w) {
   lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
   lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_set_style_pad_left(grid, 18, LV_PART_MAIN);
-  lv_obj_set_style_pad_right(grid, 18, LV_PART_MAIN);
+  lv_obj_set_style_pad_left(grid, 19, LV_PART_MAIN);
+  lv_obj_set_style_pad_right(grid, 19, LV_PART_MAIN);
   lv_obj_set_style_pad_top(grid, 14, LV_PART_MAIN);
   lv_obj_set_style_pad_bottom(grid, 14, LV_PART_MAIN);
   lv_obj_set_style_pad_column(grid, 18, LV_PART_MAIN);
@@ -1331,6 +2238,8 @@ void openFolderModal(ButtonWidget *w) {
         lv_obj_set_style_border_width(sbtn, 0, LV_PART_MAIN);
       }
       lv_obj_set_style_bg_color(sbtn, lv_color_darken(sub.bg_color, 40), (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
+      lv_obj_set_style_transform_width(sbtn, -3, (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
+      lv_obj_set_style_transform_height(sbtn, -3, (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
 
       const char* iconStr = sub.icon;
       bool isImageIcon = false;
@@ -1405,10 +2314,30 @@ void openFolderModal(ButtonWidget *w) {
 // Global Timer Subsystem Tick Handler (Runs every 250ms)
 static void timer_subsystem_tick_cb(lv_timer_t *t) {
   uint32_t now = millis();
+  static uint32_t last_alarm_flash_ms = 0;
+  static bool alarm_flash_tick = false;
+  bool should_toggle_flash = false;
+  if (now - last_alarm_flash_ms >= 500) {
+    last_alarm_flash_ms = now;
+    alarm_flash_tick = !alarm_flash_tick;
+    should_toggle_flash = true;
+  }
+
+  static time_t last_clock_second = 0;
+  time_t current_second = time(NULL);
+  bool second_changed = (current_second != last_clock_second);
+  if (second_changed) {
+    last_clock_second = current_second;
+  }
+
   for (int p = 0; p < total_pages; p++) {
     for (int b = 0; b < BUTTONS_PER_PAGE; b++) {
       ButtonWidget &w = grid_buttons[p][b];
-      if (w.widget_type == WIDGET_STOPWATCH) {
+      if (w.widget_type == WIDGET_CLOCK || w.widget_type == WIDGET_DATE) {
+        if (second_changed && p == active_page) {
+          updateClockWidgetLabel(w);
+        }
+      } else if (w.widget_type == WIDGET_STOPWATCH) {
         if (w.timer_running) {
           if (now - w.last_tick_ms >= 1000) {
             uint32_t elapsedSec = (now - w.last_tick_ms) / 1000;
@@ -1435,25 +2364,40 @@ static void timer_subsystem_tick_cb(lv_timer_t *t) {
                 lv_obj_clear_flag(w.icon, LV_OBJ_FLAG_HIDDEN);
               }
               updateTimerLabel(w);
-              playAlarmBeep();
+              w.alert_flash_state = true;
+              lv_obj_set_style_border_color(w.btn, colorHex(0xef4444), LV_PART_MAIN);
+              lv_obj_set_style_border_width(w.btn, 4, LV_PART_MAIN);
+              lv_obj_set_style_text_color(w.label, colorHex(0xef4444), LV_PART_MAIN);
+              if (w.icon) lv_obj_set_style_text_color(w.icon, colorHex(0xef4444), LV_PART_MAIN);
+              lv_obj_invalidate(w.btn);
+              pending_alarm_sound = true;
             }
           }
         }
         if (w.timer_alerting) {
           static uint32_t last_alarm_beep = 0;
-          w.alert_flash_state = !w.alert_flash_state;
-          if (w.alert_flash_state) {
-            lv_obj_set_style_bg_color(w.btn, colorHex(0xe74c3c), LV_PART_MAIN);
-            lv_obj_set_style_text_color(w.label, colorHex(0xffffff), LV_PART_MAIN);
-            if (w.icon) lv_obj_set_style_text_color(w.icon, colorHex(0xffffff), LV_PART_MAIN);
-          } else {
-            lv_obj_set_style_bg_color(w.btn, colorHex(0x1a1d24), LV_PART_MAIN);
-            lv_obj_set_style_text_color(w.label, colorHex(0xe74c3c), LV_PART_MAIN);
-            if (w.icon) lv_obj_set_style_text_color(w.icon, colorHex(0xe74c3c), LV_PART_MAIN);
+          if (should_toggle_flash) {
+            w.alert_flash_state = alarm_flash_tick;
+            if (w.alert_flash_state) {
+              lv_obj_set_style_border_color(w.btn, colorHex(0xef4444), LV_PART_MAIN);
+              lv_obj_set_style_border_width(w.btn, 4, LV_PART_MAIN);
+              lv_obj_set_style_text_color(w.label, colorHex(0xef4444), LV_PART_MAIN);
+              if (w.icon) lv_obj_set_style_text_color(w.icon, colorHex(0xef4444), LV_PART_MAIN);
+            } else {
+              if (w.border_style == BORDER_SOLID && w.border_width > 0) {
+                lv_obj_set_style_border_color(w.btn, w.border_color, LV_PART_MAIN);
+                lv_obj_set_style_border_width(w.btn, w.border_width, LV_PART_MAIN);
+              } else {
+                lv_obj_set_style_border_color(w.btn, colorHex(0x2c3e50), LV_PART_MAIN);
+                lv_obj_set_style_border_width(w.btn, 2, LV_PART_MAIN);
+              }
+              lv_obj_set_style_text_color(w.label, w.orig_text_color, LV_PART_MAIN);
+              if (w.icon) lv_obj_set_style_text_color(w.icon, w.orig_text_color, LV_PART_MAIN);
+            }
+            lv_obj_invalidate(w.btn);
           }
-          lv_obj_invalidate(w.btn);
-          if (now - last_alarm_beep >= 1200) {
-            playAlarmBeep();
+          if (!is_alarm_audio_playing && (now - last_alarm_beep >= 2500)) {
+            pending_alarm_sound = true;
             last_alarm_beep = now;
           }
         }
@@ -1476,16 +2420,13 @@ static void timer_subsystem_tick_cb(lv_timer_t *t) {
   if (any_alarm) {
     hideScreensaver();
     edge_flash_active = true;
-    static uint32_t last_edge_toggle_ms = 0;
-    if (now - last_edge_toggle_ms >= 350) {
-      last_edge_toggle_ms = now;
-      edge_flash_state = !edge_flash_state;
+    if (should_toggle_flash) {
+      edge_flash_state = alarm_flash_tick;
       if (edge_flash_overlay) {
         if (edge_flash_state) {
           lv_obj_clear_flag(edge_flash_overlay, LV_OBJ_FLAG_HIDDEN);
-          lv_obj_set_style_border_opa(edge_flash_overlay, LV_OPA_COVER, LV_PART_MAIN);
         } else {
-          lv_obj_set_style_border_opa(edge_flash_overlay, LV_OPA_TRANSP, LV_PART_MAIN);
+          lv_obj_add_flag(edge_flash_overlay, LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_invalidate(edge_flash_overlay);
       }
@@ -1516,6 +2457,10 @@ static void timer_subsystem_tick_cb(lv_timer_t *t) {
       }
     }
   }
+
+  // --- ANCS BLE Notifications Processing ---
+  matrix_ancs_loop();
+  handleAncsNotificationUi();
 }
 
 // Navigation Header Click Handlers
@@ -1550,6 +2495,7 @@ static void nav_next_click_cb(lv_event_t *e) {
 }
 
 static bool long_press_handled = false;
+static uint32_t btn_press_start_ms = 0;
 
 // Button Click Event Handler
 static void btn_event_cb(lv_event_t *e) {
@@ -1559,8 +2505,13 @@ static void btn_event_cb(lv_event_t *e) {
 
   if (code == LV_EVENT_PRESSED) {
     long_press_handled = false;
+    btn_press_start_ms = millis();
     playClickSound();
   } else if (code == LV_EVENT_LONG_PRESSED) {
+    if (millis() - btn_press_start_ms < 900) {
+      // Tap was under 900ms, not a deliberate long-press
+      return;
+    }
     long_press_handled = true;
     if (w->has_sub_buttons && w->sub_button_count > 0) {
       playConfirmSound();
@@ -1585,7 +2536,7 @@ static void btn_event_cb(lv_event_t *e) {
       }
 
       uint32_t now = millis();
-      if ((now - w->last_click_time) < 350 && w->last_click_time > 0) {
+      if ((now - w->last_click_time) < 700 && w->last_click_time > 0) {
         // Double tap detected -> Reset
         resetTimerWidget(*w);
         playConfirmSound();
@@ -1791,7 +2742,8 @@ const lv_font_t* getFontForSize(int size) {
 // Construct Dynamic Macropad UI
 void build_ui() {
   lv_obj_t *scr = lv_scr_act();
-  lv_obj_set_style_bg_color(scr, colorHex(0x111317), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(scr, colorHex(current_bg_color), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(scr, LV_DIR_NONE);
 
@@ -1890,8 +2842,8 @@ void build_ui() {
     lv_obj_set_scroll_dir(tab_pages[p], LV_DIR_NONE);
 
     // Center 3 Columns x 2 Rows Grid in 800x416 space
-    lv_obj_set_style_pad_left(tab_pages[p], 18, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(tab_pages[p], 18, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(tab_pages[p], 19, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(tab_pages[p], 19, LV_PART_MAIN);
     lv_obj_set_style_pad_top(tab_pages[p], 14, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(tab_pages[p], 14, LV_PART_MAIN);
     lv_obj_set_style_pad_column(tab_pages[p], 18, LV_PART_MAIN);
@@ -1917,6 +2869,8 @@ void build_ui() {
       lv_obj_set_style_border_color(w.btn, colorHex(0x2c3e50), LV_PART_MAIN);
       lv_obj_set_style_border_width(w.btn, 2, LV_PART_MAIN);
       lv_obj_set_style_bg_color(w.btn, colorHex(0x3498db), (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
+      lv_obj_set_style_transform_width(w.btn, -3, (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
+      lv_obj_set_style_transform_height(w.btn, -3, (lv_style_selector_t)((uint32_t)LV_PART_MAIN | (uint32_t)LV_STATE_PRESSED));
       lv_obj_clear_flag(w.btn, LV_OBJ_FLAG_SCROLLABLE);
       lv_obj_set_scroll_dir(w.btn, LV_DIR_NONE);
 
@@ -1957,18 +2911,17 @@ void build_ui() {
     }
   }
 
-  // 3. Syncing Layout Popup Modal (Centered Dark Glass Card)
-  sync_popup = lv_obj_create(scr);
+  // 3. Syncing Layout Popup Modal (Centered Dark Glass Card on Top Layer)
+  lv_obj_t *top_layer = lv_layer_top();
+  sync_popup = lv_obj_create(top_layer);
   lv_obj_set_size(sync_popup, 360, 100);
   lv_obj_center(sync_popup);
-  lv_obj_set_style_radius(sync_popup, 20, LV_PART_MAIN);
+  lv_obj_set_style_radius(sync_popup, 16, LV_PART_MAIN);
   lv_obj_set_style_bg_color(sync_popup, colorHex(0x181a1f), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(sync_popup, LV_OPA_90, LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(sync_popup, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_border_color(sync_popup, colorHex(0x3498db), LV_PART_MAIN);
   lv_obj_set_style_border_width(sync_popup, 2, LV_PART_MAIN);
-  lv_obj_set_style_shadow_color(sync_popup, colorHex(0x000000), LV_PART_MAIN);
-  lv_obj_set_style_shadow_width(sync_popup, 30, LV_PART_MAIN);
-  lv_obj_set_style_shadow_opa(sync_popup, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(sync_popup, 0, LV_PART_MAIN);
   lv_obj_clear_flag(sync_popup, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(sync_popup, LV_DIR_NONE);
 
@@ -1978,7 +2931,7 @@ void build_ui() {
   lv_obj_t *sync_icon = lv_label_create(sync_popup);
   const char* syncSym = getMaterialSymbolUtf8("refresh");
   lv_label_set_text(sync_icon, (strlen(syncSym) > 0) ? syncSym : LV_SYMBOL_REFRESH);
-  lv_obj_set_style_text_font(sync_icon, &lv_font_montserrat_26, LV_PART_MAIN);
+  lv_obj_set_style_text_font(sync_icon, &lv_font_material_symbols_28, LV_PART_MAIN);
   lv_obj_set_style_text_color(sync_icon, colorHex(0x3498db), LV_PART_MAIN);
 
   sync_popup_lbl = lv_label_create(sync_popup);
@@ -1990,18 +2943,195 @@ void build_ui() {
   lv_obj_add_flag(sync_popup, LV_OBJ_FLAG_HIDDEN);
 
   // 4. Full-Screen Perimeter Edge Flash Alarm Overlay (Top Layer)
-  lv_obj_t *top_layer = lv_layer_top();
   edge_flash_overlay = lv_obj_create(top_layer);
   lv_obj_set_size(edge_flash_overlay, 800, 480);
   lv_obj_set_pos(edge_flash_overlay, 0, 0);
   lv_obj_set_style_bg_opa(edge_flash_overlay, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_border_color(edge_flash_overlay, colorHex(0xef4444), LV_PART_MAIN);
   lv_obj_set_style_border_width(edge_flash_overlay, 6, LV_PART_MAIN);
-  lv_obj_set_style_radius(edge_flash_overlay, 0, LV_PART_MAIN);
+  lv_obj_set_style_border_opa(edge_flash_overlay, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_pad_all(edge_flash_overlay, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(edge_flash_overlay, 0, LV_PART_MAIN);
   lv_obj_clear_flag(edge_flash_overlay, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_clear_flag(edge_flash_overlay, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_flag(edge_flash_overlay, LV_OBJ_FLAG_HIDDEN);
+
+  // 5. ANCS Notification Banner Modal (Top Layer, floating at top of screen)
+  ancs_banner = lv_obj_create(top_layer);
+  lv_obj_set_size(ancs_banner, 540, 76);
+  lv_obj_set_pos(ancs_banner, 130, 10);
+  lv_obj_set_style_radius(ancs_banner, 16, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(ancs_banner, colorHex(0x1e293b), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ancs_banner, LV_OPA_90, LV_PART_MAIN);
+  lv_obj_set_style_border_color(ancs_banner, colorHex(0x38bdf8), LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_banner, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_banner, 10, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(ancs_banner, 8, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(ancs_banner, 20, LV_PART_MAIN);
+  lv_obj_set_style_shadow_color(ancs_banner, colorHex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_shadow_opa(ancs_banner, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_banner, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(ancs_banner, ancs_banner_click_cb, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_set_flex_flow(ancs_banner, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(ancs_banner, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  ancs_banner_icon = lv_label_create(ancs_banner);
+  lv_label_set_text(ancs_banner_icon, LV_SYMBOL_BELL);
+  lv_obj_set_style_text_font(ancs_banner_icon, &lv_font_montserrat_24, LV_PART_MAIN);
+  lv_obj_set_style_text_color(ancs_banner_icon, colorHex(0x38bdf8), LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_banner_icon, LV_OBJ_FLAG_CLICKABLE);
+
+  ancs_text_col = lv_obj_create(ancs_banner);
+  lv_obj_set_flex_grow(ancs_text_col, 1);
+  lv_obj_set_height(ancs_text_col, 56);
+  lv_obj_set_style_bg_opa(ancs_text_col, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_text_col, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_text_col, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(ancs_text_col, 2, LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_text_col, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(ancs_text_col, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_flex_flow(ancs_text_col, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(ancs_text_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+  ancs_banner_title = lv_label_create(ancs_text_col);
+  lv_label_set_text(ancs_banner_title, "Notification");
+  lv_obj_set_style_text_font(ancs_banner_title, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_color(ancs_banner_title, colorHex(0xffffff), LV_PART_MAIN);
+  lv_label_set_long_mode(ancs_banner_title, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(ancs_banner_title, LV_PCT(100));
+  lv_obj_clear_flag(ancs_banner_title, LV_OBJ_FLAG_CLICKABLE);
+
+  ancs_banner_msg = lv_label_create(ancs_text_col);
+  lv_label_set_text(ancs_banner_msg, "");
+  lv_obj_set_style_text_font(ancs_banner_msg, &lv_font_montserrat_16, LV_PART_MAIN);
+  lv_obj_set_style_text_color(ancs_banner_msg, colorHex(0x94a3b8), LV_PART_MAIN);
+  lv_label_set_long_mode(ancs_banner_msg, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(ancs_banner_msg, LV_PCT(100));
+  lv_obj_clear_flag(ancs_banner_msg, LV_OBJ_FLAG_CLICKABLE);
+
+  lv_obj_t *ancs_close_btn = lv_btn_create(ancs_banner);
+  lv_obj_set_size(ancs_close_btn, 30, 30);
+  lv_obj_set_style_bg_opa(ancs_close_btn, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_close_btn, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_close_btn, 0, LV_PART_MAIN);
+  lv_obj_add_event_cb(ancs_close_btn, ancs_banner_close_cb, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t *ancs_close = lv_label_create(ancs_close_btn);
+  lv_label_set_text(ancs_close, LV_SYMBOL_CLOSE);
+  lv_obj_set_style_text_font(ancs_close, &lv_font_montserrat_18, LV_PART_MAIN);
+  lv_obj_set_style_text_color(ancs_close, colorHex(0x64748b), LV_PART_MAIN);
+  lv_obj_center(ancs_close);
+
+  lv_obj_add_flag(ancs_banner, LV_OBJ_FLAG_HIDDEN);
+
+  // 6. Persistent ANCS Notification Blue Bar (Top Layer, 300x5px centered at top: x=250, y=0)
+  ancs_bar = lv_obj_create(top_layer);
+  lv_obj_set_size(ancs_bar, 320, 24);
+  lv_obj_set_pos(ancs_bar, 240, 0);
+  lv_obj_set_style_bg_opa(ancs_bar, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_bar, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_bar, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_bar, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(ancs_bar, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(ancs_bar, ancs_bar_event_cb, LV_EVENT_ALL, NULL);
+
+  ancs_bar_line = lv_obj_create(ancs_bar);
+  lv_obj_set_size(ancs_bar_line, 300, 5);
+  lv_obj_set_pos(ancs_bar_line, 10, 0);
+  lv_obj_set_style_radius(ancs_bar_line, 3, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(ancs_bar_line, colorHex(0x38bdf8), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ancs_bar_line, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_bar_line, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_bar_line, 0, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(ancs_bar_line, 8, LV_PART_MAIN);
+  lv_obj_set_style_shadow_color(ancs_bar_line, colorHex(0x38bdf8), LV_PART_MAIN);
+  lv_obj_set_style_shadow_opa(ancs_bar_line, LV_OPA_80, LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_bar_line, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(ancs_bar_line, LV_OBJ_FLAG_CLICKABLE);
+
+  lv_obj_add_flag(ancs_bar, LV_OBJ_FLAG_HIDDEN);
+
+  // 7. Notification Center Drawer (Top Layer, drop-down beneath header)
+  ancs_drawer = lv_obj_create(top_layer);
+  lv_obj_set_size(ancs_drawer, 600, 320);
+  lv_obj_set_pos(ancs_drawer, 100, 60);
+  lv_obj_set_style_radius(ancs_drawer, 16, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(ancs_drawer, colorHex(0x1e293b), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ancs_drawer, LV_OPA_90, LV_PART_MAIN);
+  lv_obj_set_style_border_color(ancs_drawer, colorHex(0x38bdf8), LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_drawer, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_drawer, 10, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(ancs_drawer, 30, LV_PART_MAIN);
+  lv_obj_set_style_shadow_color(ancs_drawer, colorHex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_shadow_opa(ancs_drawer, LV_OPA_80, LV_PART_MAIN);
+  lv_obj_clear_flag(ancs_drawer, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_flex_flow(ancs_drawer, LV_FLEX_FLOW_COLUMN);
+
+  // Header inside drawer
+  lv_obj_t *d_hdr = lv_obj_create(ancs_drawer);
+  lv_obj_set_size(d_hdr, 576, 36);
+  lv_obj_set_style_bg_opa(d_hdr, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(d_hdr, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(d_hdr, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(d_hdr, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_flex_flow(d_hdr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(d_hdr, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  ancs_drawer_title = lv_label_create(d_hdr);
+  lv_label_set_text(ancs_drawer_title, "Notifications");
+  lv_obj_set_style_text_font(ancs_drawer_title, &lv_font_montserrat_18, LV_PART_MAIN);
+  lv_obj_set_style_text_color(ancs_drawer_title, colorHex(0xffffff), LV_PART_MAIN);
+
+  lv_obj_t *d_actions = lv_obj_create(d_hdr);
+  lv_obj_set_size(d_actions, 180, 34);
+  lv_obj_set_style_bg_opa(d_actions, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(d_actions, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(d_actions, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(d_actions, 8, LV_PART_MAIN);
+  lv_obj_clear_flag(d_actions, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_flex_flow(d_actions, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(d_actions, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  lv_obj_t *clear_btn = lv_btn_create(d_actions);
+  lv_obj_set_size(clear_btn, 88, 30);
+  lv_obj_set_style_radius(clear_btn, 8, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(clear_btn, colorHex(0x334155), LV_PART_MAIN);
+  lv_obj_set_style_border_width(clear_btn, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(clear_btn, 0, LV_PART_MAIN);
+  lv_obj_add_event_cb(clear_btn, ancs_clear_all_cb, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t *clear_lbl = lv_label_create(clear_btn);
+  lv_label_set_text(clear_lbl, "Clear All");
+  lv_obj_set_style_text_font(clear_lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_color(clear_lbl, colorHex(0xf87171), LV_PART_MAIN);
+  lv_obj_center(clear_lbl);
+
+  lv_obj_t *close_btn = lv_btn_create(d_actions);
+  lv_obj_set_size(close_btn, 68, 30);
+  lv_obj_set_style_radius(close_btn, 8, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(close_btn, colorHex(0x334155), LV_PART_MAIN);
+  lv_obj_set_style_border_width(close_btn, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(close_btn, 0, LV_PART_MAIN);
+  lv_obj_add_event_cb(close_btn, ancs_drawer_close_cb, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t *close_lbl = lv_label_create(close_btn);
+  lv_label_set_text(close_lbl, "Close");
+  lv_obj_set_style_text_font(close_lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_color(close_lbl, colorHex(0x94a3b8), LV_PART_MAIN);
+  lv_obj_center(close_lbl);
+
+  // Scrollable container for cards
+  ancs_drawer_list = lv_obj_create(ancs_drawer);
+  lv_obj_set_size(ancs_drawer_list, 576, 250);
+  lv_obj_set_style_bg_opa(ancs_drawer_list, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ancs_drawer_list, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(ancs_drawer_list, 0, LV_PART_MAIN);
+  lv_obj_set_flex_flow(ancs_drawer_list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_scroll_dir(ancs_drawer_list, LV_DIR_VER);
+
+  lv_obj_add_flag(ancs_drawer, LV_OBJ_FLAG_HIDDEN);
 
   switch_page(0);
 }
@@ -2344,6 +3474,22 @@ void applyButtonData(ButtonWidget &w, JsonObject bObj, const String &themeName =
       lv_obj_clear_flag(w.icon, LV_OBJ_FLAG_HIDDEN);
     }
     updateTimerLabel(w);
+  } else if (bTypeStr == "clock") {
+    w.widget_type = WIDGET_CLOCK;
+    w.timer_running = true;
+    w.timer_alerting = false;
+    if (strlen(w.widget_format) == 0) {
+      strncpy(w.widget_format, "12h-sec", sizeof(w.widget_format) - 1);
+    }
+    updateClockWidgetLabel(w);
+  } else if (bTypeStr == "date") {
+    w.widget_type = WIDGET_DATE;
+    w.timer_running = true;
+    w.timer_alerting = false;
+    if (strlen(w.widget_format) == 0) {
+      strncpy(w.widget_format, "standard", sizeof(w.widget_format) - 1);
+    }
+    updateClockWidgetLabel(w);
   } else {
     w.widget_type = WIDGET_BUTTON;
     w.timer_running = false;
@@ -2444,6 +3590,16 @@ void applyLayoutJsonDoc(DynamicJsonDocument &doc) {
     audio_volume = constrain(vVal, 0, 100);
   }
 
+  if (doc.containsKey("_soundClick")) {
+    sound_click_file = String((const char*)(doc["_soundClick"] | "default"));
+  }
+  if (doc.containsKey("_soundNotif")) {
+    sound_notif_file = String((const char*)(doc["_soundNotif"] | "default"));
+  }
+  if (doc.containsKey("_soundAlarm")) {
+    sound_alarm_file = String((const char*)(doc["_soundAlarm"] | "default"));
+  }
+
   if (doc.containsKey("_screensaverTimeout")) {
     int sVal = doc["_screensaverTimeout"] | 300;
     screensaver_timeout_sec = constrain(sVal, 0, 3600);
@@ -2455,12 +3611,7 @@ void applyLayoutJsonDoc(DynamicJsonDocument &doc) {
 
   if (doc.containsKey("_bgColor")) {
     const char* bgStr = doc["_bgColor"] | "#111317";
-    if (bgStr && bgStr[0] == '#') {
-      uint32_t bgHex = (uint32_t)strtol(bgStr + 1, NULL, 16);
-      current_bg_color = bgHex;
-      lv_obj_set_style_bg_color(lv_scr_act(), colorHex(bgHex), LV_PART_MAIN);
-      switch_page(active_page);
-    }
+    setScreenBgColorStr(bgStr);
   }
 
   if (doc.containsKey("_theme")) {
@@ -2717,9 +3868,82 @@ void listProfiles() {
   Serial.println();
 }
 
-// File upload state
-static File uploadFile;
-static bool uploadActive = false;
+void listSounds() {
+  if (!hal.storage) {
+    Serial.println("{\"type\":\"sound_list\",\"sounds\":[]}");
+    return;
+  }
+
+  DynamicJsonDocument doc(4096);
+  doc["type"] = "sound_list";
+  JsonArray sounds = doc.createNestedArray("sounds");
+
+  // Scan /sounds directory
+  File dir = hal.storage->open("/sounds");
+  if (dir && dir.isDirectory()) {
+    File file = dir.openNextFile();
+    while (file) {
+      if (!file.isDirectory()) {
+        String name = String(file.name());
+        while (name.startsWith("/")) name = name.substring(1);
+        int slashIdx = name.lastIndexOf('/');
+        String base = (slashIdx >= 0) ? name.substring(slashIdx + 1) : name;
+        String lower = base;
+        lower.toLowerCase();
+        if (lower.endsWith(".wav")) {
+          sounds.add(base);
+        }
+      } else {
+        File subFile = file.openNextFile();
+        while (subFile) {
+          if (!subFile.isDirectory()) {
+            String name = String(subFile.name());
+            while (name.startsWith("/")) name = name.substring(1);
+            int slashIdx = name.lastIndexOf('/');
+            String base = (slashIdx >= 0) ? name.substring(slashIdx + 1) : name;
+            String lower = base;
+            lower.toLowerCase();
+            if (lower.endsWith(".wav")) {
+              sounds.add(base);
+            }
+          }
+          subFile = file.openNextFile();
+        }
+      }
+      file = dir.openNextFile();
+    }
+  }
+
+  // Also check root / for any .wav files
+  File root = hal.storage->open("/");
+  if (root && root.isDirectory()) {
+    File rFile = root.openNextFile();
+    while (rFile) {
+      if (!rFile.isDirectory()) {
+        String name = String(rFile.name());
+        while (name.startsWith("/")) name = name.substring(1);
+        int slashIdx = name.lastIndexOf('/');
+        String base = (slashIdx >= 0) ? name.substring(slashIdx + 1) : name;
+        String lower = base;
+        lower.toLowerCase();
+        if (lower.endsWith(".wav")) {
+          bool exists = false;
+          for (JsonVariant v : sounds) {
+            if (base.equalsIgnoreCase(v.as<const char*>())) {
+              exists = true;
+              break;
+            }
+          }
+          if (!exists) sounds.add(base);
+        }
+      }
+      rFile = root.openNextFile();
+    }
+  }
+
+  serializeJson(doc, Serial);
+  Serial.println();
+}
 
 static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 int base64_decode_chunk(const char *input, uint8_t *output) {
@@ -2745,6 +3969,68 @@ int base64_decode_chunk(const char *input, uint8_t *output) {
   return out_idx;
 }
 
+// Background Asset Writer on Core 0
+struct FileWriteCmd {
+  enum { FW_START, FW_CHUNK, FW_END } type;
+  char filename[64];
+  char b64Data[448];
+};
+
+static QueueHandle_t s_file_write_queue = NULL;
+
+static void fileWriterTask(void *pvParameters) {
+  File activeFile;
+  FileWriteCmd cmd;
+
+  while (true) {
+    if (xQueueReceive(s_file_write_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+      if (cmd.type == FileWriteCmd::FW_START) {
+        if (activeFile) {
+          activeFile.close();
+        }
+        String fullPath = String("/") + cmd.filename;
+        if (hal.storage) {
+          activeFile = hal.storage->open(fullPath, "w");
+        }
+        Serial.printf("{\"type\":\"file_start_ack\",\"name\":\"%s\",\"ready\":%s}\n", 
+                      cmd.filename, activeFile ? "true" : "false");
+      } else if (cmd.type == FileWriteCmd::FW_CHUNK) {
+        if (activeFile && strlen(cmd.b64Data) > 0) {
+          uint8_t outBuf[320];
+          int decLen = base64_decode_chunk(cmd.b64Data, outBuf);
+          if (decLen > 0) {
+            activeFile.write(outBuf, decLen);
+          }
+        }
+      } else if (cmd.type == FileWriteCmd::FW_END) {
+        if (activeFile) {
+          activeFile.flush();
+          activeFile.close();
+        }
+        Serial.printf("{\"type\":\"file_done\",\"name\":\"%s\"}\n", cmd.filename);
+      }
+    }
+  }
+}
+
+void initFileWriter() {
+  if (!s_file_write_queue) {
+    s_file_write_queue = xQueueCreate(8, sizeof(FileWriteCmd));
+    xTaskCreatePinnedToCore(fileWriterTask, "fileWriter", 6144, NULL, 3, NULL, 0);
+    Serial.println("[FS] Background asset file writer task pinned to Core 0");
+  }
+}
+
+// Serial & UI IPC State
+static char serial_rx_buf[16384];
+static size_t serial_rx_idx = 0;
+static char *s_ui_json_buf = NULL;
+static volatile bool s_pending_ui_sync = false;
+static char s_pending_profile_name[64] = {0};
+static volatile bool s_pending_profile_load = false;
+
+void applyUiJson(const char* jsonStr);
+
 // Process Received JSON Command
 void processJsonCommand(const char* jsonStr) {
   DynamicJsonDocument doc(16384);
@@ -2759,10 +4045,15 @@ void processJsonCommand(const char* jsonStr) {
   if (strcmp(cmd, "list_profiles") == 0) {
     listProfiles();
     return;
+  } else if (strcmp(cmd, "list_sounds") == 0) {
+    listSounds();
+    return;
   } else if (strcmp(cmd, "load_profile") == 0) {
     const char* name = doc["name"] | doc["profile"] | "";
     if (strlen(name) > 0) {
-      loadProfile(name);
+      strncpy(s_pending_profile_name, name, sizeof(s_pending_profile_name) - 1);
+      s_pending_profile_name[sizeof(s_pending_profile_name) - 1] = '\0';
+      s_pending_profile_load = true;
     } else {
       Serial.println("{\"type\":\"error\",\"message\":\"Missing profile name\"}");
     }
@@ -2802,34 +4093,35 @@ void processJsonCommand(const char* jsonStr) {
   } else if (strcmp(cmd, "file_start") == 0) {
     showSyncPopup("Syncing Assets...");
     const char* name = doc["name"] | "";
-    if (strlen(name) > 0) {
-      String fullPath = String("/") + name;
-      if (hal.storage) {
-        uploadFile = hal.storage->open(fullPath, "w");
-        uploadActive = (bool)uploadFile;
-      }
-      Serial.printf("{\"type\":\"file_start_ack\",\"name\":\"%s\",\"ready\":%s}\n", name, uploadActive ? "true" : "false");
+    if (strlen(name) > 0 && s_file_write_queue) {
+      FileWriteCmd fw;
+      fw.type = FileWriteCmd::FW_START;
+      strncpy(fw.filename, name, sizeof(fw.filename) - 1);
+      fw.filename[sizeof(fw.filename) - 1] = '\0';
+      fw.b64Data[0] = '\0';
+      xQueueSend(s_file_write_queue, &fw, portMAX_DELAY);
     }
     return;
   } else if (strcmp(cmd, "file_chunk") == 0) {
-    if (uploadActive && uploadFile) {
-      const char* b64 = doc["data"] | "";
-      if (strlen(b64) > 0) {
-        uint8_t outBuf[1024];
-        int decLen = base64_decode_chunk(b64, outBuf);
-        if (decLen > 0) {
-          uploadFile.write(outBuf, decLen);
-        }
-      }
+    const char* b64 = doc["data"] | "";
+    if (strlen(b64) > 0 && s_file_write_queue) {
+      FileWriteCmd fw;
+      fw.type = FileWriteCmd::FW_CHUNK;
+      fw.filename[0] = '\0';
+      strncpy(fw.b64Data, b64, sizeof(fw.b64Data) - 1);
+      fw.b64Data[sizeof(fw.b64Data) - 1] = '\0';
+      xQueueSend(s_file_write_queue, &fw, portMAX_DELAY);
     }
     return;
   } else if (strcmp(cmd, "file_end") == 0) {
     const char* name = doc["name"] | "";
-    if (uploadActive && uploadFile) {
-      uploadFile.flush();
-      uploadFile.close();
-      uploadActive = false;
-      Serial.printf("{\"type\":\"file_done\",\"name\":\"%s\"}\n", name);
+    if (s_file_write_queue) {
+      FileWriteCmd fw;
+      fw.type = FileWriteCmd::FW_END;
+      strncpy(fw.filename, name, sizeof(fw.filename) - 1);
+      fw.filename[sizeof(fw.filename) - 1] = '\0';
+      fw.b64Data[0] = '\0';
+      xQueueSend(s_file_write_queue, &fw, portMAX_DELAY);
     }
     return;
   } else if (strcmp(cmd, "ping") == 0) {
@@ -2845,6 +4137,26 @@ void processJsonCommand(const char* jsonStr) {
     int vVal = doc["volume"] | 80;
     audio_volume = constrain(vVal, 0, 100);
     Serial.printf("{\"type\":\"volume_ack\",\"volume\":%d}\n", audio_volume);
+  } else if (strcmp(cmd, "set_sound") == 0) {
+    if (doc.containsKey("click")) sound_click_file = String((const char*)(doc["click"] | "default"));
+    if (doc.containsKey("notif")) sound_notif_file = String((const char*)(doc["notif"] | "default"));
+    if (doc.containsKey("alarm")) sound_alarm_file = String((const char*)(doc["alarm"] | "default"));
+    Serial.printf("{\"type\":\"sound_ack\",\"click\":\"%s\",\"notif\":\"%s\",\"alarm\":\"%s\"}\n", sound_click_file.c_str(), sound_notif_file.c_str(), sound_alarm_file.c_str());
+  } else if (strcmp(cmd, "preview_sound") == 0) {
+    const char* snd = doc["sound"] | "click";
+    if (doc.containsKey("file")) {
+      const char* f = doc["file"];
+      if (f && strlen(f) > 0) {
+        if (strcmp(snd, "click") == 0) sound_click_file = String(f);
+        else if (strcmp(snd, "notif") == 0) sound_notif_file = String(f);
+        else if (strcmp(snd, "alarm") == 0) sound_alarm_file = String(f);
+      }
+    }
+    const char* f = (doc.containsKey("file") && strlen((const char*)(doc["file"] | "")) > 0) ? (const char*)doc["file"] : NULL;
+    if (strcmp(snd, "click") == 0) playClickSound();
+    else if (strcmp(snd, "notif") == 0) playNotificationChime(f);
+    else if (strcmp(snd, "alarm") == 0) playAlarmBeep(f, false);
+    Serial.printf("{\"type\":\"preview_ack\",\"sound\":\"%s\"}\n", snd);
   } else if (strcmp(cmd, "set_screensaver") == 0) {
     int toVal = doc["timeout"] | 300;
     screensaver_timeout_sec = constrain(toVal, 0, 3600);
@@ -2859,7 +4171,41 @@ void processJsonCommand(const char* jsonStr) {
       struct timeval tv = { (time_t)epoch, 0 };
       settimeofday(&tv, NULL);
     }
-  } else if (strcmp(cmd, "sync_page") == 0) {
+  } else if (strcmp(cmd, "set_bg_color") == 0) {
+    if (s_ui_json_buf) {
+      strncpy(s_ui_json_buf, jsonStr, 32767);
+      s_ui_json_buf[32767] = '\0';
+      s_pending_ui_sync = true;
+    }
+    const char* col = doc["color"] | "";
+    Serial.printf("{\"type\":\"bg_ack\",\"color\":\"%s\"}\n", col);
+    return;
+  } else if (strcmp(cmd, "sync_page") == 0 || strcmp(cmd, "widget_update") == 0) {
+    if (s_ui_json_buf) {
+      strncpy(s_ui_json_buf, jsonStr, 32767);
+      s_ui_json_buf[32767] = '\0';
+      s_pending_ui_sync = true;
+    }
+    return;
+  }
+}
+
+void applyUiJson(const char* jsonStr) {
+  DynamicJsonDocument doc(16384);
+  DeserializationError err = deserializeJson(doc, jsonStr);
+  if (err != DeserializationError::Ok) return;
+
+  const char* cmd = doc["cmd"] | "";
+  if (strcmp(cmd, "set_bg_color") == 0) {
+    const char* col = doc["color"] | "";
+    setScreenBgColorStr(col);
+    return;
+  }
+  if (strcmp(cmd, "sync_page") == 0) {
+    if (doc.containsKey("bgColor")) {
+      const char* bg = doc["bgColor"] | "";
+      setScreenBgColorStr(bg);
+    }
     bool silent = doc["silent"] | false;
     if (!silent) {
       showSyncPopup("Syncing Layout...");
@@ -2886,7 +4232,6 @@ void processJsonCommand(const char* jsonStr) {
       // Update Tab Label
       if (strlen(pageTitle) > 0 && pIdx < MAX_PAGES) {
         lv_label_set_text(tab_btn_labels[pIdx], pageTitle);
-        lv_obj_clear_flag(tab_btns[pIdx], LV_OBJ_FLAG_HIDDEN);
         lv_obj_center(tab_btn_labels[pIdx]);
         lv_obj_invalidate(tab_btns[pIdx]);
       }
@@ -2900,10 +4245,7 @@ void processJsonCommand(const char* jsonStr) {
         bIdx++;
       }
       lv_obj_invalidate(tab_pages[pIdx]);
-      if (pIdx == active_page) {
-        lv_obj_invalidate(lv_scr_act());
-        lv_refr_now(NULL);
-      }
+      switch_page(active_page < total_pages ? active_page : 0);
 
       Serial.printf("{\"type\":\"ack\",\"page\":%d,\"total\":%d}\n", p, total_pages);
     }
@@ -2929,37 +4271,41 @@ void processJsonCommand(const char* jsonStr) {
   }
 }
 
-// 100% Non-blocking Serial Line Buffer (Zero CPU Stall)
-static char serial_rx_buf[16384];
-static size_t serial_rx_idx = 0;
+void processIncomingLine(const char* lineStr) {
+  if (strncmp(lineStr, "LOAD_PROFILE:", 13) == 0 || strncmp(lineStr, "LOAD_PROFILE ", 13) == 0) {
+    const char* p = lineStr + 13;
+    while (*p == ' ') p++;
+    strncpy(s_pending_profile_name, p, sizeof(s_pending_profile_name) - 1);
+    s_pending_profile_name[sizeof(s_pending_profile_name) - 1] = '\0';
+    s_pending_profile_load = true;
+    return;
+  }
+  if (strcasecmp(lineStr, "LIST_PROFILES") == 0) {
+    listProfiles();
+    return;
+  }
+  if (lineStr[0] == '{') {
+    processJsonCommand(lineStr);
+  }
+}
 
-void handleIncomingSerial() {
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (serial_rx_idx > 0) {
-        serial_rx_buf[serial_rx_idx] = '\0';
-        String line = String(serial_rx_buf);
-        line.trim();
-
-        if (line.startsWith("LOAD_PROFILE:") || line.startsWith("LOAD_PROFILE ")) {
-          int colonIdx = line.indexOf(':');
-          if (colonIdx < 0) colonIdx = line.indexOf(' ');
-          String prof = line.substring(colonIdx + 1);
-          prof.trim();
-          loadProfile(prof.c_str());
-        } else if (line.equalsIgnoreCase("LIST_PROFILES")) {
-          listProfiles();
-        } else if (line.startsWith("{")) {
-          processJsonCommand(serial_rx_buf);
+static void serialTask(void *pvParameters) {
+  while (true) {
+    while (Serial.available()) {
+      char c = (char)Serial.read();
+      if (c == '\n' || c == '\r') {
+        if (serial_rx_idx > 0) {
+          serial_rx_buf[serial_rx_idx] = '\0';
+          processIncomingLine(serial_rx_buf);
+          serial_rx_idx = 0;
         }
-        serial_rx_idx = 0;
-      }
-    } else {
-      if (serial_rx_idx < sizeof(serial_rx_buf) - 1) {
-        serial_rx_buf[serial_rx_idx++] = c;
+      } else {
+        if (serial_rx_idx < sizeof(serial_rx_buf) - 1) {
+          serial_rx_buf[serial_rx_idx++] = c;
+        }
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(2));
   }
 }
 
@@ -2976,10 +4322,9 @@ void setup() {
   // Initialize LVGL
   lv_init();
 
-  // Allocate Full Frame Buffer in PSRAM
+  // Allocate Frame Buffer in PSRAM (800x480)
   buf1 = (lv_color_t *)ps_malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
   if (!buf1) buf1 = (lv_color_t *)malloc(DISP_BUF_SIZE * sizeof(lv_color_t));
-
   lv_disp_draw_buf_init(&draw_buf, buf1, NULL, DISP_BUF_SIZE);
 
   // Register Display Driver
@@ -2996,6 +4341,7 @@ void setup() {
   lv_indev_drv_init(&indev_drv);
   indev_drv.type = LV_INDEV_TYPE_POINTER;
   indev_drv.read_cb = my_touchpad_read;
+  indev_drv.long_press_time = 1000;
   lv_indev_drv_register(&indev_drv);
 
   // Register File System Drivers for 'A' (Auto-detect), 'S' (SD), and 'L' (LittleFS)
@@ -3045,6 +4391,15 @@ void setup() {
   // Initialize I2S Audio Driver
   initI2SAudio();
 
+  // Initialize Background Asset Writer on Core 0
+  initFileWriter();
+
+  s_ui_json_buf = (char*)ps_malloc(32768);
+  if (!s_ui_json_buf) s_ui_json_buf = (char*)malloc(16384);
+
+  xTaskCreatePinnedToCore(serialTask, "serialTask", 12288, NULL, 2, NULL, 0);
+  Serial.println("[Serial] Background serial receiver task pinned to Core 0");
+
   // Show Startup Screen immediately before any UI elements or layouts are constructed
   showStartupScreen();
 
@@ -3059,12 +4414,27 @@ void setup() {
   Serial.printf("[Boot] Active profile: %s\n", activeProf.c_str());
   loadProfile(activeProf.c_str());
 
+  matrix_ancs_init("MatrixPad");
+
   Serial.println("{\"type\":\"ready\",\"engine\":\"LVGL-v8.3.11\",\"board\":\"JC8048W550\"}");
 }
 
 void loop() {
+  if (s_pending_profile_load) {
+    s_pending_profile_load = false;
+    loadProfile(s_pending_profile_name);
+  }
+  if (s_pending_ui_sync && s_ui_json_buf) {
+    s_pending_ui_sync = false;
+    applyUiJson(s_ui_json_buf);
+  }
+
   lv_timer_handler();
-  handleIncomingSerial();
+
+  if (pending_alarm_sound && !s_audio_playing && isAnyTimerAlerting()) {
+    pending_alarm_sound = false;
+    playAlarmBeep(sound_alarm_file.c_str(), true);
+  }
 
   // Screensaver Inactivity Check
   if (screensaver_timeout_sec > 0 && !screensaver_active) {

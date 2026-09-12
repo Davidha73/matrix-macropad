@@ -58,6 +58,11 @@ This document collects architectural and feature enhancement ideas for both the 
   - **Retro Synthwave Grid:** 3D perspective wireframe horizon with floating sun.
   - **Floating HUD Clock:** Smooth bouncing clock with customizable background wallpaper.
 
+### ~~🔹 iPhone BLE Notifications (Apple Notification Center Service - ANCS)~~ _(✅ Completed)_
+
+- **Concept:** Pair the ESP32-S3 hardware directly to an iPhone via Bluetooth Low Energy (BLE) to display incoming text messages, calls, and app notifications on-screen.
+- **Implemented:** Native Apple Notification Center Service (ANCS) integration via NimBLE with secure pairing, incoming alert chime sound, top status bar pill indicator, transient popup banner alerts with tap-to-expand/minimize, and pull-down notification center drawer supporting per-app custom iconography and accent colors.
+
 ---
 
 ## 2. Config (Settings Window)

@@ -10,8 +10,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ]);
 
-// Disable hardware acceleration to resolve external display rendering issues
-app.disableHardwareAcceleration();
+// Hardware acceleration enabled for GPU compositing and smooth modal animations
+// app.disableHardwareAcceleration();
 
 // Ensure reliable keystroke and modifier chord registration
 keyboard.config.autoDelayMs = 10;
@@ -565,6 +565,9 @@ function createHardwareProfileData(config) {
     _theme: config._theme || 'default',
     _brightness: config._brightness !== undefined ? config._brightness : 50,
     _volume: config._volume !== undefined ? config._volume : 80,
+    _soundClick: config._soundClick || 'default',
+    _soundNotif: config._soundNotif || 'default',
+    _soundAlarm: config._soundAlarm || 'default',
     _screensaverTimeout: config._screensaverTimeout !== undefined ? config._screensaverTimeout : 300,
     _screensaverAnim: config._screensaverAnim || 'bouncing_clock'
   };
@@ -730,7 +733,8 @@ function syncSinglePageToHardware(p, config, silent = true) {
   if (!hardwareSerialPort || !hardwareSerialPort.isOpen) return;
   const totalPages = getDynamicTotalPages(config);
   const { pageTitle, buttonList } = generatePageButtonList(config, p);
-  hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, buttons: buttonList, silent: !!silent }) + '\n');
+  const bgColor = config._bgColor || '#111317';
+  hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, bgColor, buttons: buttonList, silent: !!silent }) + '\n');
 }
 
 async function syncAllPagesToHardware(passedConfig, forceAssets = true) {
@@ -751,17 +755,27 @@ async function syncAllPagesToHardware(passedConfig, forceAssets = true) {
     const activeTheme = config._theme || 'default';
     const now = new Date();
 
+    const bgColor = config._bgColor || '#111317';
     for (let p = 1; p <= totalPages; p++) {
       const { pageTitle, buttonList } = generatePageButtonList(config, p);
-      hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, buttons: buttonList }) + '\n');
+      hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_page', page: p, totalPages: totalPages, title: pageTitle, bgColor, buttons: buttonList }) + '\n');
       await new Promise(r => setTimeout(r, 60));
     }
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_bg_color', color: bgColor }) + '\n');
+    await new Promise(r => setTimeout(r, 60));
+
     const brightnessVal = (config._brightness !== undefined && !isNaN(config._brightness)) ? parseInt(config._brightness, 10) : 50;
     hardwareSerialPort.write(JSON.stringify({ cmd: 'set_brightness', brightness: brightnessVal }) + '\n');
     await new Promise(r => setTimeout(r, 60));
 
     const volumeVal = (config._volume !== undefined && !isNaN(config._volume)) ? parseInt(config._volume, 10) : 80;
     hardwareSerialPort.write(JSON.stringify({ cmd: 'set_volume', volume: volumeVal }) + '\n');
+    await new Promise(r => setTimeout(r, 60));
+
+    const soundClick = config._soundClick || 'default';
+    const soundNotif = config._soundNotif || 'default';
+    const soundAlarm = config._soundAlarm || 'default';
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_sound', click: soundClick, notif: soundNotif, alarm: soundAlarm }) + '\n');
     await new Promise(r => setTimeout(r, 60));
 
     const screensaverTimeout = (config._screensaverTimeout !== undefined && !isNaN(config._screensaverTimeout)) ? parseInt(config._screensaverTimeout, 10) : 300;
@@ -793,35 +807,22 @@ async function syncAllPagesToHardware(passedConfig, forceAssets = true) {
   }
 }
 
-// 1-second live widget tick & real-time clock broadcast to hardware
+// Periodic real-time clock calibration to hardware (every 60s without jitter)
+let lastSyncTimeEpoch = 0;
 setInterval(() => {
   try {
     if (!hardwareSerialPort || !hardwareSerialPort.isOpen) return;
-    const config = loadConfig();
-    const totalPages = getDynamicTotalPages(config);
     const now = new Date();
-    const localEpoch = Math.floor(now.getTime() / 1000) - (now.getTimezoneOffset() * 60);
-    hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_time', epoch: localEpoch }) + '\n');
-
-    for (let p = 1; p <= totalPages; p++) {
-      for (let b = 1; b <= 6; b++) {
-        const item = config[`p${p}-b${b}`] || {};
-        if (item.type === 'clock' || item.type === 'date') {
-          let text = '';
-          let sub = '';
-          if (item.type === 'clock') {
-            text = formatHardwareTime(now, item.format || '12h-sec');
-            sub = 'Live Clock';
-          } else if (item.type === 'date') {
-            text = formatHardwareDate(now, item.format || 'standard');
-            sub = 'Date';
-          }
-          hardwareSerialPort.write(JSON.stringify({ cmd: 'widget_update', page: p, button: b, label: text, shortcut: sub }) + '\n');
-        }
-      }
+    const currentSecEpoch = Math.floor(now.getTime() / 1000);
+    if (currentSecEpoch - lastSyncTimeEpoch >= 60) {
+      lastSyncTimeEpoch = currentSecEpoch;
+      const localEpoch = currentSecEpoch - (now.getTimezoneOffset() * 60);
+      hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_time', epoch: localEpoch }) + '\n');
     }
   } catch (e) {}
 }, 1000);
+
+let lastReportedNoPort = false;
 
 async function startHardwareDisplayBridge() {
   try {
@@ -829,19 +830,30 @@ async function startHardwareDisplayBridge() {
     const { ReadlineParser } = require('@serialport/parser-readline');
 
     const ports = await SerialPort.list();
-    console.log('[ESP32-S3 Bridge] Available serial ports:', ports.map(p => ({ path: p.path, manufacturer: p.manufacturer, vendorId: p.vendorId })));
+
+    // Filter out internal Microsoft system / Bluetooth COM ports
+    const nonMicrosoftPorts = ports.filter(p => {
+      const m = (p.manufacturer || '').toLowerCase();
+      return !m.includes('microsoft');
+    });
 
     const espPortInfo = ports.find(p => 
-      (p.vendorId && (p.vendorId.toLowerCase().includes('303a') || p.vendorId.toLowerCase().includes('1a86') || p.vendorId.toLowerCase().includes('10c4'))) ||
+      (p.vendorId && (p.vendorId.toLowerCase().includes('303a') || p.vendorId.toLowerCase().includes('1a86') || p.vendorId.toLowerCase().includes('10c4') || p.vendorId.toLowerCase().includes('0403'))) ||
+      (p.manufacturer && (p.manufacturer.toLowerCase().includes('espressif') || p.manufacturer.toLowerCase().includes('wch') || p.manufacturer.toLowerCase().includes('silicon labs'))) ||
       (p.path && (p.path.toUpperCase() === 'COM5' || p.path.includes('usbmodem') || p.path.includes('usbserial')))
-    ) || (ports.length > 0 ? ports[0] : null);
+    ) || (nonMicrosoftPorts.length > 0 ? nonMicrosoftPorts[0] : null);
 
     if (!espPortInfo) {
-      console.log('[ESP32-S3 Bridge] No compatible ESP32 serial port found. Retrying in 3s...');
+      if (!lastReportedNoPort) {
+        console.log('[ESP32-S3 Bridge] Available serial ports:', ports.map(p => ({ path: p.path, manufacturer: p.manufacturer, vendorId: p.vendorId })));
+        console.log('[ESP32-S3 Bridge] No compatible ESP32 hardware detected. Waiting for device...');
+        lastReportedNoPort = true;
+      }
       setTimeout(startHardwareDisplayBridge, 3000);
       return;
     }
 
+    lastReportedNoPort = false;
     console.log(`[ESP32-S3 Bridge] Attempting connection to ${espPortInfo.path}...`);
 
     hardwareSerialPort = new SerialPort({
@@ -860,8 +872,22 @@ async function startHardwareDisplayBridge() {
             fileDoneResolver(msg);
           }
         }
+        if (msg.type === 'sound_list' && Array.isArray(msg.sounds)) {
+          cachedHardwareSounds = msg.sounds;
+          while (soundListResolvers.length > 0) {
+            const r = soundListResolvers.shift();
+            r(cachedHardwareSounds);
+          }
+          BrowserWindow.getAllWindows().forEach(w => {
+            if (w.webContents) w.webContents.send('hardware-sounds-updated', cachedHardwareSounds);
+          });
+        }
         if (msg.type === 'ready' || msg.type === 'pong') {
           console.log('[ESP32-S3] Board announced ready. Pushing layout...');
+          const now = new Date();
+          const localEpoch = Math.floor(now.getTime() / 1000) - (now.getTimezoneOffset() * 60);
+          hardwareSerialPort.write(JSON.stringify({ cmd: 'sync_time', epoch: localEpoch }) + '\n');
+          hardwareSerialPort.write(JSON.stringify({ cmd: 'list_sounds' }) + '\n');
           syncAllPagesToHardware();
         } else if (msg.type === 'trigger') {
           const targetAction = `p${msg.page}-b${msg.button}`;
@@ -1422,6 +1448,9 @@ function formatLayoutTemplate(cfg) {
   formatted._brightness = cfg._brightness !== undefined ? cfg._brightness : 50;
   formatted._volume = cfg._volume !== undefined ? cfg._volume : 33;
   if (cfg._bgColor !== undefined) formatted._bgColor = cfg._bgColor;
+  formatted._soundClick = cfg._soundClick || 'default';
+  formatted._soundNotif = cfg._soundNotif || 'default';
+  formatted._soundAlarm = cfg._soundAlarm || 'default';
 
   // 2. Page Names (p1-name, p2-name, etc.)
   const totalPages = getDynamicTotalPages(cfg);
@@ -1697,6 +1726,52 @@ ipcMain.handle('sync-hardware', () => {
   return true;
 });
 
+ipcMain.handle('set-hardware-sound', (event, { click, notif, alarm }) => {
+  if (hardwareSerialPort && hardwareSerialPort.isOpen) {
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_sound', click, notif, alarm }) + '\n');
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('set-hardware-bg-color', (event, color) => {
+  if (hardwareSerialPort && hardwareSerialPort.isOpen && color) {
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_bg_color', color }) + '\n');
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('preview-hardware-sound', (event, soundType, file) => {
+  if (hardwareSerialPort && hardwareSerialPort.isOpen) {
+    const payload = { cmd: 'preview_sound', sound: soundType };
+    if (file) payload.file = file;
+    hardwareSerialPort.write(JSON.stringify(payload) + '\n');
+    return true;
+  }
+  return false;
+});
+
+let cachedHardwareSounds = [];
+let soundListResolvers = [];
+
+ipcMain.handle('get-hardware-sounds', () => {
+  return new Promise((resolve) => {
+    if (!hardwareSerialPort || !hardwareSerialPort.isOpen) {
+      return resolve(cachedHardwareSounds);
+    }
+    soundListResolvers.push(resolve);
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'list_sounds' }) + '\n');
+    setTimeout(() => {
+      const idx = soundListResolvers.indexOf(resolve);
+      if (idx !== -1) {
+        soundListResolvers.splice(idx, 1);
+        resolve(cachedHardwareSounds);
+      }
+    }, 1500);
+  });
+});
+
 // --- Custom Frameless Window Controls ---
 ipcMain.on('window-minimize', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
@@ -1726,6 +1801,72 @@ ipcMain.handle('window-is-maximized', (event) => {
 
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  const currentVersion = app.getVersion();
+  if (!app.isPackaged) {
+    try {
+      const https = require('https');
+      const releaseInfo = await new Promise((resolve, reject) => {
+        const req = https.get('https://api.github.com/repos/Davidha73/matrix-macropad/releases/latest', {
+          headers: { 'User-Agent': 'Matrix-Macropad-App' }
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              try {
+                resolve(JSON.parse(data));
+              } catch (e) {
+                reject(e);
+              }
+            } else {
+              reject(new Error(`GitHub API returned status ${res.statusCode}`));
+            }
+          });
+        });
+        req.on('error', reject);
+        req.setTimeout(6000, () => {
+          req.destroy(new Error('Connection timed out'));
+        });
+      });
+
+      const latestTag = (releaseInfo.tag_name || '').replace(/^v/, '');
+      const isNewer = latestTag && latestTag !== currentVersion;
+      return {
+        status: isNewer ? 'update-available' : 'up-to-date',
+        currentVersion,
+        latestVersion: latestTag || currentVersion,
+        releaseUrl: releaseInfo.html_url || 'https://github.com/Davidha73/matrix-macropad/releases',
+        devMode: true
+      };
+    } catch (err) {
+      return {
+        status: 'dev',
+        currentVersion,
+        message: 'Running in development mode (Update check requires packaged app or internet access).'
+      };
+    }
+  }
+
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const latestVersion = result?.updateInfo?.version || currentVersion;
+    const isNewer = latestVersion !== currentVersion;
+    return {
+      status: isNewer ? 'update-available' : 'up-to-date',
+      currentVersion,
+      latestVersion,
+      devMode: false
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      currentVersion,
+      message: err.message || 'Failed to check for updates'
+    };
+  }
 });
 
 

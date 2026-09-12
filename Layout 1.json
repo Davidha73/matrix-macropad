@@ -1,10 +1,10 @@
 {
   "_theme": "default",
-  "_screensaverTimeout": 0,
+  "_screensaverTimeout": 1800,
   "_screensaverAnim": "matrix_rain",
   "_screensaverImage": "icon.png",
-  "_brightness": 25,
-  "_volume": 6,
+  "_brightness": 50,
+  "_volume": 25,
   "_bgColor": "#0f1115",
   "p1-name": "Editing Tools",
   "p2-name": "System Controls",
@@ -18,11 +18,10 @@
     "iconFit": "contain",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
-    "fontSize": 44,
     "materialIcon": "select_all",
     "borderRadius": 24,
     "customColorType": "linear",
@@ -40,13 +39,14 @@
     "iconFit": "contain",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
-    "fontSize": 44,
     "materialIcon": "content_copy",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "payload": "copy",
+    "customTextColor": "#ffffff"
   },
   "p1-b3": {
     "label": "Paste",
@@ -56,13 +56,14 @@
     "iconFit": "contain",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
-    "fontSize": 44,
     "materialIcon": "content_paste",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "payload": "paste",
+    "customTextColor": "#ffffff"
   },
   "p1-b4": {
     "label": "Undo",
@@ -71,14 +72,15 @@
     "color": "#4b5563",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
-    "fontSize": 44,
     "iconFit": "contain",
     "materialIcon": "undo",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "payload": "undo",
+    "customTextColor": "#ffffff"
   },
   "p1-b5": {
     "label": "Redo",
@@ -87,14 +89,15 @@
     "color": "#4b5563",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
     "iconFit": "contain",
-    "fontSize": 44,
     "materialIcon": "redo",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "payload": "redo",
+    "customTextColor": "#ffffff"
   },
   "p1-b6": {
     "label": "Delete",
@@ -103,14 +106,15 @@
     "color": "#c0392b",
     "borderStyle": "solid",
     "borderWidth": 1,
-    "borderColor": "#00ff1e",
+    "borderColor": "#ffffff",
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 22,
-    "fontSize": 44,
     "iconFit": "contain",
     "materialIcon": "delete",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "payload": "delete",
+    "customTextColor": "#ffffff"
   },
   "p2-b1": {
     "label": "Prev",
@@ -160,8 +164,7 @@
     "customTextColor": "#ffffff",
     "payload": "media-play",
     "borderRadius": 24,
-    "materialIcon": "play_pause",
-    "icon": "play_pause"
+    "materialIcon": "play_pause"
   },
   "p2-b3": {
     "label": "Next",
@@ -176,7 +179,9 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "materialIcon": "skip_next",
-    "fontSize": 68
+    "payload": "media-next",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p2-b4": {
     "label": "Vol Down",
@@ -191,7 +196,9 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "materialIcon": "volume_down",
-    "fontSize": 68
+    "payload": "vol-down",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p2-b5": {
     "label": "Mute Audio",
@@ -206,7 +213,9 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "materialIcon": "volume_off",
-    "fontSize": 68
+    "payload": "vol-mute",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p2-b6": {
     "label": "Vol Up",
@@ -221,7 +230,9 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "materialIcon": "volume_up",
-    "fontSize": 68
+    "payload": "vol-up",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p3-b1": {
     "label": "Snap Window Left",
@@ -235,14 +246,15 @@
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 35,
-    "materialIcon": "chevron_left",
     "customColorType": "linear",
     "customColor1": "#E74C3C",
     "customColor2": "#F39C12",
     "customAngle": 90,
     "customTextColor": "#ffffff",
     "payload": "Win+Left",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "materialIcon": "chevron_left",
+    "icon": "chevron_left"
   },
   "p3-b2": {
     "label": "Full Screen",
@@ -256,7 +268,6 @@
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 35,
-    "fontSize": 60,
     "customColorType": "linear",
     "customColor1": "#ff007f",
     "customColor2": "#9b00e8",
@@ -282,7 +293,9 @@
     "customColor2": "#e74c3c",
     "customAngle": 90,
     "customTextColor": "#ffffff",
-    "materialIcon": "chevron_right"
+    "materialIcon": "chevron_right",
+    "payload": "Win+Right",
+    "borderRadius": 24
   },
   "p3-b4": {
     "label": "Clock",
@@ -297,13 +310,34 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "format": "12h-sec",
-    "fontSize": 84
+    "fontSize": 84,
+    "payload": "display",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p3-b5": {
+    "label": "Date",
+    "color": "#8e44ad",
+    "type": "date",
+    "value": "display",
+    "borderColor": "#ffffff",
+    "borderStyle": "solid",
+    "borderWidth": 2,
+    "format": "standard",
+    "iconFit": "contain",
+    "borderDashGap": 8,
+    "borderDashLength": 12,
+    "borderBracketLength": 35,
+    "fontSize": 84,
+    "payload": "display",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
+  },
+  "p3-b6": {
     "label": "68px normal",
     "color": "#f39c12",
     "type": "timer",
-    "value": "stopwatch",
+    "value": "1500",
     "iconFit": "contain",
     "borderStyle": "solid",
     "borderWidth": 2,
@@ -312,23 +346,12 @@
     "borderDashLength": 12,
     "borderBracketLength": 35,
     "fontSize": 84,
-    "timerMode": "stopwatch",
-    "timerDuration": 60,
-    "materialIcon": "timer"
-  },
-  "p3-b6": {
-    "label": "Date",
-    "color": "#8e44ad",
-    "type": "date",
-    "value": "display",
-    "borderColor": "#ffffff",
-    "borderStyle": "solid",
-    "borderWidth": 2,
-    "format": "uk",
-    "iconFit": "contain",
-    "borderDashGap": 8,
-    "borderDashLength": 12,
-    "borderBracketLength": 35
+    "timerDuration": 1500,
+    "materialIcon": "timer",
+    "duration": 1500,
+    "payload": "1500",
+    "customTextColor": "#ffffff",
+    "borderRadius": 24
   },
   "p4-b1": {
     "label": "Stop npm",
@@ -363,10 +386,10 @@
     "borderRadius": 24
   },
   "p4-b3": {
-    "label": "",
+    "label": "flash",
     "color": "#4b5563",
-    "type": "text",
-    "value": "",
+    "type": "macro",
+    "value": "TYPE './flash'\nEnter",
     "iconFit": "cover",
     "borderStyle": "none",
     "borderWidth": 2,
@@ -374,21 +397,43 @@
     "borderDashGap": 8,
     "borderDashLength": 12,
     "borderBracketLength": 35,
-    "payload": "",
+    "payload": "TYPE './flash'\nEnter",
     "customTextColor": "#ffffff",
-    "borderRadius": 24
+    "borderRadius": 24,
+    "materialIcon": "bolt",
+    "icon": "bolt"
   },
   "p4-b4": {
-    "label": "Button 4",
+    "label": "Copy",
     "color": "#4b5563",
-    "type": "text",
-    "value": ""
+    "type": "shortcut",
+    "value": "Ctrl+C",
+    "payload": "Ctrl+C",
+    "iconFit": "contain",
+    "customTextColor": "#ffffff",
+    "borderStyle": "none",
+    "borderWidth": 2,
+    "borderRadius": 24,
+    "borderColor": "#ffffff",
+    "borderDashGap": 8,
+    "borderDashLength": 12,
+    "borderBracketLength": 35
   },
   "p4-b5": {
-    "label": "Button 5",
+    "label": "Paste",
     "color": "#4b5563",
-    "type": "text",
-    "value": ""
+    "type": "shortcut",
+    "value": "Ctrl+V",
+    "payload": "Ctrl+V",
+    "iconFit": "contain",
+    "customTextColor": "#ffffff",
+    "borderStyle": "none",
+    "borderWidth": 2,
+    "borderRadius": 24,
+    "borderColor": "#ffffff",
+    "borderDashGap": 8,
+    "borderDashLength": 12,
+    "borderBracketLength": 35
   },
   "p4-b6": {
     "label": "Close Window",
