@@ -1,6 +1,6 @@
 {
   "name": "matrix-macropad",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Matrix Macropad Desktop Bridge & Configurator",
   "main": "main.js",
   "scripts": {
@@ -27,6 +27,8 @@
     ],
     "files": [
       "**/*",
+      "!src-tauri/**",
+      "!dist/**",
       "!node_modules_win/**",
       "!libraries/**",
       "!firmware/**",
