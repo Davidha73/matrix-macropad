@@ -1311,9 +1311,23 @@ async function executeToggleAction(key, cfg, config) {
   return true;
 }
 
+function getWritableLayoutPath(desiredPath) {
+  const defaultLocalLayout = path.join(__dirname, 'Layout 1.json');
+  if (!desiredPath || typeof desiredPath !== 'string' || desiredPath.includes('.asar')) {
+    if (app.isPackaged) {
+      const userProfilesDir = path.join(app.getPath('userData'), 'profiles');
+      if (!fs.existsSync(userProfilesDir)) {
+        try { fs.mkdirSync(userProfilesDir, { recursive: true }); } catch (e) {}
+      }
+      return path.join(userProfilesDir, 'Layout 1.json');
+    }
+    return defaultLocalLayout;
+  }
+  return desiredPath;
+}
+
 function saveConfigData(newConfig) {
-  const layout1Path = path.join(__dirname, 'Layout 1.json');
-  const targetFilePath = (newConfig && newConfig._activeFilePath) ? newConfig._activeFilePath : layout1Path;
+  const targetFilePath = getWritableLayoutPath(newConfig && newConfig._activeFilePath);
   if (newConfig) {
     newConfig._activeFilePath = targetFilePath;
     newConfig._layoutName = path.basename(targetFilePath);
@@ -1496,11 +1510,17 @@ function formatLayoutTemplate(cfg) {
 }
 
 function loadConfig() {
-  const layout1Path = path.join(__dirname, 'Layout 1.json');
+  const layout1Path = getWritableLayoutPath(null);
+  const bundledLayout = path.join(__dirname, 'Layout 1.json');
+  if (!fs.existsSync(layout1Path) && fs.existsSync(bundledLayout)) {
+    try {
+      fs.writeFileSync(layout1Path, fs.readFileSync(bundledLayout, 'utf-8'), 'utf-8');
+    } catch (e) {}
+  }
   if (fs.existsSync(configPath)) {
     try {
       const cached = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (cached && cached._activeFilePath && fs.existsSync(cached._activeFilePath)) {
+      if (cached && cached._activeFilePath && !cached._activeFilePath.includes('.asar') && fs.existsSync(cached._activeFilePath)) {
         const activeData = JSON.parse(fs.readFileSync(cached._activeFilePath, 'utf-8'));
         activeData._activeFilePath = cached._activeFilePath;
         activeData._layoutName = cached._layoutName || path.basename(cached._activeFilePath);
@@ -1512,7 +1532,7 @@ function loadConfig() {
     try {
       const data = JSON.parse(fs.readFileSync(layout1Path, 'utf-8'));
       data._activeFilePath = layout1Path;
-      data._layoutName = 'Layout 1.json';
+      data._layoutName = path.basename(layout1Path);
       const formatted = formatLayoutTemplate(data);
       fs.writeFileSync(configPath, JSON.stringify(formatted, null, 2));
       return formatted;
@@ -1522,11 +1542,12 @@ function loadConfig() {
     try {
       const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (data && Object.keys(data).length > 0) {
+        data._activeFilePath = layout1Path;
         return formatLayoutTemplate(data);
       }
     } catch (e) {}
   }
-  return formatLayoutTemplate({ ...defaultConfig, _activeFilePath: layout1Path, _layoutName: 'Layout 1.json' });
+  return formatLayoutTemplate({ ...defaultConfig, _activeFilePath: layout1Path, _layoutName: path.basename(layout1Path) });
 }
 
 const profilesDir = path.join(app.getPath('userData'), 'profiles');
@@ -1729,6 +1750,24 @@ ipcMain.handle('sync-hardware', () => {
 ipcMain.handle('set-hardware-sound', (event, { click, notif, alarm }) => {
   if (hardwareSerialPort && hardwareSerialPort.isOpen) {
     hardwareSerialPort.write(JSON.stringify({ cmd: 'set_sound', click, notif, alarm }) + '\n');
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('set-hardware-volume', (event, vol) => {
+  const v = parseInt(vol, 10);
+  if (!isNaN(v) && hardwareSerialPort && hardwareSerialPort.isOpen) {
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_volume', volume: v }) + '\n');
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('set-hardware-brightness', (event, val) => {
+  const b = parseInt(val, 10);
+  if (!isNaN(b) && hardwareSerialPort && hardwareSerialPort.isOpen) {
+    hardwareSerialPort.write(JSON.stringify({ cmd: 'set_brightness', brightness: b }) + '\n');
     return true;
   }
   return false;

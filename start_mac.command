@@ -17,9 +17,12 @@ if [ -d "node_modules_mac" ] && [ ! -d "node_modules" ]; then
 fi
 
 # If node_modules is missing or doesn't have Mac Electron installed, install dependencies
-if [ ! -d "node_modules" ] || [ ! -d "node_modules/electron/dist/Electron.app" ]; then
+if [ ! -d "node_modules" ] || ([ ! -d "node_modules/electron/dist/Electron.app" ] && [ ! -d "$HOME/.electron-dist/Electron.app" ]); then
     echo "Installing/compiling macOS dependencies (first time setup)..."
     npm install
+    if [ ! -d "node_modules/electron/dist/Electron.app" ] && [ ! -d "$HOME/.electron-dist/Electron.app" ] && [ -f "node_modules/electron/install.js" ]; then
+        node node_modules/electron/install.js
+    fi
 fi
 
 echo "Launching Matrix Macropad..."

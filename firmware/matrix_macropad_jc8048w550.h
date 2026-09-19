@@ -145,7 +145,7 @@ public:
         0 /* hsync_polarity */, 4 /* hsync_front_porch */, 4 /* hsync_pulse_width */, 8 /* hsync_back_porch */,
         0 /* vsync_polarity */, 4 /* vsync_front_porch */, 4 /* vsync_pulse_width */, 8 /* vsync_back_porch */,
         1 /* pclk_active_neg */, 12000000 /* prefer_speed (12MHz) */, false /* useBigEndian */,
-        0 /* de_idle_high */, 0 /* pclk_idle_high */, (size_t)(JC_SCREEN_WIDTH * 10) /* bounce_buffer_size_px */
+        0 /* de_idle_high */, 0 /* pclk_idle_high */
     );
 
     gfx = new Arduino_RGB_Display(JC_SCREEN_WIDTH, JC_SCREEN_HEIGHT, rgbpanel, JC_SCREEN_ROTATION, true);

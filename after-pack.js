@@ -5,5 +5,8 @@ exports.default = async function (context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   console.log('Applying deep ad-hoc code signature to:', appPath);
+  try {
+    execSync(`find "${appPath}" -name "._*" -delete 2>/dev/null || true`);
+  } catch (_) {}
   execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
 };

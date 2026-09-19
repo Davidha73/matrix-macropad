@@ -15,6 +15,7 @@
     "dist:mac": "electron-builder --mac",
     "dist:all": "electron-builder -mw"
   },
+  "author": "David Harries",
   "build": {
     "appId": "com.matrix.macropad",
     "productName": "Matrix Macropad",
@@ -27,8 +28,9 @@
     ],
     "files": [
       "**/*",
-      "!src-tauri/**",
       "!dist/**",
+      "!src-tauri/**",
+      "!.git/**",
       "!node_modules_win/**",
       "!libraries/**",
       "!firmware/**",
