@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('api', {
   getHardwareStatus: () => ipcRenderer.invoke('get-hardware-status'),
   syncHardware: (config) => ipcRenderer.invoke('sync-hardware', config),
   setHardwareSound: (soundSettings) => ipcRenderer.invoke('set-hardware-sound', soundSettings),
+  setHardwareVolume: (vol) => ipcRenderer.invoke('set-hardware-volume', vol),
+  setHardwareBrightness: (val) => ipcRenderer.invoke('set-hardware-brightness', val),
   setHardwareBgColor: (color) => ipcRenderer.invoke('set-hardware-bg-color', color),
   previewHardwareSound: (soundType, file) => ipcRenderer.invoke('preview-hardware-sound', soundType, file),
   getHardwareSounds: () => ipcRenderer.invoke('get-hardware-sounds'),

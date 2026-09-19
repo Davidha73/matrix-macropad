@@ -4,8 +4,11 @@
   "_screensaverAnim": "matrix_rain",
   "_screensaverImage": "icon.png",
   "_brightness": 50,
-  "_volume": 25,
+  "_volume": 21,
   "_bgColor": "#0f1115",
+  "_soundClick": "click3.wav",
+  "_soundNotif": "message1.wav",
+  "_soundAlarm": "default",
   "p1-name": "Editing Tools",
   "p2-name": "System Controls",
   "p3-name": "Custom Macros",
@@ -449,5 +452,5 @@
     "borderBracketLength": 35
   },
   "_layoutName": "Layout 1.json",
-  "_activeFilePath": "C:\\Users\\david\\Documents\\Projects\\matrix-macropad-git\\Layout 1.json"
+  "_activeFilePath": "/Volumes/T7/Projects/Matrix Macropad/Layout 1.json"
 }

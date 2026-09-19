@@ -875,6 +875,8 @@ bool playWavAudio(const char* soundName, size_t maxBytes = 350000, bool is_timer
   uint16_t channels = 2;
   uint32_t sampleRate = 44100;
   uint16_t bitsPerSample = 16;
+  uint16_t blockAlign = 0;
+  uint16_t subFormat = 1; // 1 = PCM, 3 = IEEE float
   uint32_t dataSize = 0;
   bool foundData = false;
 
@@ -889,11 +891,19 @@ bool playWavAudio(const char* soundName, size_t maxBytes = 350000, bool is_timer
       f.read((uint8_t*)&channels, 2);
       f.read((uint8_t*)&sampleRate, 4);
       uint32_t byteRate = 0;
-      uint16_t blockAlign = 0;
       f.read((uint8_t*)&byteRate, 4);
       f.read((uint8_t*)&blockAlign, 2);
       f.read((uint8_t*)&bitsPerSample, 2);
-      if (chunkSize > 16) {
+
+      // Handle WAVE_FORMAT_EXTENSIBLE (0xFFFE = 65534)
+      if (audioFormat == 0xFFFE && chunkSize >= 40) {
+        uint8_t extHeader[24];
+        f.read(extHeader, 24);
+        subFormat = extHeader[8] | (extHeader[9] << 8); // First 2 bytes of SubFormat GUID (1=PCM, 3=FLOAT)
+        if (chunkSize > 40) {
+          f.seek(f.position() + (chunkSize - 40));
+        }
+      } else if (chunkSize > 16) {
         f.seek(f.position() + (chunkSize - 16));
       }
     } else if (memcmp(chunkId, "data", 4) == 0) {
@@ -906,19 +916,20 @@ bool playWavAudio(const char* soundName, size_t maxBytes = 350000, bool is_timer
   }
 
   if (!foundData || channels == 0 || (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32)) {
-    Serial.printf("[WAV] Unsupported audio spec: %s (fmt=%d, ch=%d, bits=%d, data=%d)\n",
-                  soundName, audioFormat, channels, bitsPerSample, dataSize);
+    Serial.printf("[WAV] Unsupported audio spec: %s (fmt=%d, sub=%d, ch=%d, bits=%d, data=%d)\n",
+                  soundName, audioFormat, subFormat, channels, bitsPerSample, dataSize);
     f.close();
     return false;
   }
 
-  Serial.printf("[WAV] Playing %s: %uHz, %uch, %ubit, fmt=%u, size=%u\n",
-                soundName, (unsigned)sampleRate, (unsigned)channels, (unsigned)bitsPerSample, (unsigned)audioFormat, (unsigned)dataSize);
+  Serial.printf("[WAV] Playing %s: %uHz, %uch, %ubit, fmt=%u(sub=%u), size=%u\n",
+                soundName, (unsigned)sampleRate, (unsigned)channels, (unsigned)bitsPerSample, (unsigned)audioFormat, (unsigned)subFormat, (unsigned)dataSize);
 
   i2s_set_sample_rates(I2S_SPEAKER_PORT, sampleRate);
 
   float vol = getPerceptualVolumeGain();
-  size_t bytesPerSample = bitsPerSample / 8;
+  size_t bytesPerSample = (blockAlign > 0 && channels > 0) ? (blockAlign / channels) : (bitsPerSample / 8);
+  if (bytesPerSample == 0) bytesPerSample = (bitsPerSample >= 8) ? (bitsPerSample / 8) : 2;
   size_t bytesPerFrame = channels * bytesPerSample;
   size_t bytesRemaining = (dataSize > 0) ? dataSize : f.size();
   if (bytesRemaining > maxBytes) bytesRemaining = maxBytes;
@@ -948,27 +959,26 @@ bool playWavAudio(const char* soundName, size_t maxBytes = 350000, bool is_timer
 
       for (int ch = 0; ch < (int)channels; ch++) {
         float sampleVal = 0.0f;
-        if (bitsPerSample == 16) {
+        if (subFormat == 3 || (audioFormat == 3 && bytesPerSample == 4)) {
+          float fraw = 0.0f;
+          memcpy(&fraw, &inRaw[inIdx], 4);
+          sampleVal = fraw * 32767.0f;
+          inIdx += 4;
+        } else if (bytesPerSample == 2) {
           int16_t raw16 = (int16_t)(inRaw[inIdx] | (inRaw[inIdx + 1] << 8));
           sampleVal = (float)raw16;
           inIdx += 2;
-        } else if (bitsPerSample == 24) {
+        } else if (bytesPerSample == 3) {
           int32_t raw24 = (int32_t)(inRaw[inIdx] | (inRaw[inIdx + 1] << 8) | (inRaw[inIdx + 2] << 16));
           if (raw24 & 0x800000) raw24 |= 0xFF000000;
           sampleVal = (float)(raw24 >> 8);
           inIdx += 3;
-        } else if (bitsPerSample == 32) {
-          if (audioFormat == 3) {
-            float fraw = 0.0f;
-            memcpy(&fraw, &inRaw[inIdx], 4);
-            sampleVal = fraw * 32767.0f;
-          } else {
-            int32_t raw32 = 0;
-            memcpy(&raw32, &inRaw[inIdx], 4);
-            sampleVal = (float)(raw32 >> 16);
-          }
+        } else if (bytesPerSample == 4) {
+          int32_t raw32 = 0;
+          memcpy(&raw32, &inRaw[inIdx], 4);
+          sampleVal = (float)(raw32 >> 16);
           inIdx += 4;
-        } else if (bitsPerSample == 8) {
+        } else if (bytesPerSample == 1) {
           sampleVal = ((int)inRaw[inIdx] - 128) * 256.0f;
           inIdx += 1;
         }
@@ -999,7 +1009,7 @@ static void doPlayClickSound(const char* soundFile) {
   if (soundFile && strcmp(soundFile, "mute") == 0) return;
 
   if (soundFile && strcmp(soundFile, "default") != 0 && strlen(soundFile) > 0) {
-    if (playWavAudio(soundFile, 20000, false)) return;
+    if (playWavAudio(soundFile, 250000, false)) return;
   }
 
   static int16_t click_buf[4410];

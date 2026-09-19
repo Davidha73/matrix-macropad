@@ -1,10 +1,8 @@
-## [2026-09-12 v1.8.66]
-- **Status:** Resolved clock skipping/jumping issue by implementing native `WIDGET_CLOCK` and `WIDGET_DATE` handling in the firmware's local 250ms timer subsystem, eliminating the 1-second serial packet flood and reducing PC time synchronization to once every 60 seconds without RTC resets. Added a 1-second live preview ticker in the desktop app.
+## [2026-09-19 / v1.0.2]
+- **Status:** Bumped project version to v1.0.2 in `package.json` and `tauri.conf.json`. Successfully compiled and packaged macOS Electron standalone release assets (`Matrix Macropad-1.0.2-arm64.dmg`, `Matrix Macropad-1.0.2-arm64-mac.zip`, and `latest-mac.yml`).
 - **Files Changed:**
-  - [firmware/matrix_macropad_jc8048w550.h](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/firmware/matrix_macropad_jc8048w550.h)
-  - [firmware/MatrixMacropad_Freenove5inch.ino](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/firmware/MatrixMacropad_Freenove5inch.ino)
-  - [main.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/main.js)
-  - [settings-preview.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/settings-preview.js)
-  - [ui/settings-preview.js](file:///c:/Users/david/Documents/Projects/matrix-macropad-git/ui/settings-preview.js)
+  - [package.json](file:///Volumes/T7/Projects/Matrix%20Macropad/package.json)
+  - [src-tauri/tauri.conf.json](file:///Volumes/T7/Projects/Matrix%20Macropad/src-tauri/tauri.conf.json)
+  - [memory.md](file:///Volumes/T7/Projects/Matrix%20Macropad/memory.md)
 - **Next Objectives:**
-  - Verify smooth, 1-second incremental clock progression on hardware touchscreen and preview grid.
+  - Upload `Matrix Macropad-1.0.2-arm64.dmg`, `Matrix Macropad-1.0.2-arm64-mac.zip`, and `latest-mac.yml` to the GitHub v1.0.2 release page.

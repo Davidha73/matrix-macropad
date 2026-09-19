@@ -3000,6 +3000,7 @@ function clearInput(inputId, callbackName) {
     }
 }
 
+let _brightnessDebounceTimer = null;
 function onBrightnessChange(val) {
     const num = parseInt(val, 10);
     currentConfig._brightness = isNaN(num) ? 100 : num;
@@ -3007,8 +3008,16 @@ function onBrightnessChange(val) {
     if (valEl) valEl.textContent = `${currentConfig._brightness}%`;
     saveCurrentFormInputs();
     markUnsaved();
+
+    if (window.api && typeof window.api.setHardwareBrightness === 'function') {
+        clearTimeout(_brightnessDebounceTimer);
+        _brightnessDebounceTimer = setTimeout(() => {
+            window.api.setHardwareBrightness(currentConfig._brightness);
+        }, 80);
+    }
 }
 
+let _volumeDebounceTimer = null;
 function onVolumeChange(val) {
     const num = parseInt(val, 10);
     currentConfig._volume = isNaN(num) ? 80 : num;
@@ -3016,6 +3025,13 @@ function onVolumeChange(val) {
     if (valEl) valEl.textContent = `${currentConfig._volume}%`;
     saveCurrentFormInputs();
     markUnsaved();
+
+    if (window.api && typeof window.api.setHardwareVolume === 'function') {
+        clearTimeout(_volumeDebounceTimer);
+        _volumeDebounceTimer = setTimeout(() => {
+            window.api.setHardwareVolume(currentConfig._volume);
+        }, 80);
+    }
 }
 
 function onThemeChange() {

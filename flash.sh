@@ -37,8 +37,9 @@ export COPYFILE_DISABLE=1
 export COPY_EXTENDED_ATTRIBUTES_DISABLE=1
 
 # Clean macOS AppleDouble resource fork files that corrupt C++ compilation
-find firmware libraries -name '._*' -delete 2>/dev/null || true
-dot_clean firmware libraries 2>/dev/null || true
+find firmware -name '._*' -delete 2>/dev/null || true
+find libraries -name '._*' -delete 2>/dev/null || true
+dot_clean -m firmware libraries 2>/dev/null || true
 
 # Clean cached incompatible libdeps or builds if present
 if [ -d "firmware/.pio/build" ] || [ -d "firmware/.pio/libdeps/jc8048w550_esp32s3_5inch/GFX Library for Arduino/src/databus" ]; then
